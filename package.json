@@ -22,6 +22,14 @@
   ],
   "author": "gordozgz",
   "license": "MIT",
+  "homepage": "https://github.com/gordozgz/win7-paint-multiplayer#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gordozgz/win7-paint-multiplayer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gordozgz/win7-paint-multiplayer/issues"
+  },
   "type": "commonjs",
   "devDependencies": {
     "electron": "^33.2.1",
