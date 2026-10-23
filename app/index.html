@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:">
+<title>Безымянный - Paint</title>
+<link rel="stylesheet" href="css/paint.css">
+</head>
+<body>
+<div id="app">
+  <div id="titlebar">
+    <div class="tb-icon" data-icon="app"></div>
+    <div class="qat">
+      <button class="qbtn" data-cmd="save" title="Сохранить (Ctrl+S)" data-icon="save"></button>
+      <button class="qbtn" data-cmd="undo" title="Отменить (Ctrl+Z)" data-icon="undo"></button>
+      <button class="qbtn" data-cmd="redo" title="Вернуть (Ctrl+Y)" data-icon="redo"></button>
+      <span class="qat-sep"></span>
+      <button class="qbtn qmore" data-menu="qat" title="Настройка панели быстрого доступа" data-icon="qatMore"></button>
+    </div>
+    <div class="tb-title" id="title">Безымянный - Paint</div>
+  </div>
+
+  <div id="tabs">
+    <button id="fileTab">Файл</button>
+    <div class="tab active" data-tab="home">Главная</div>
+    <div class="tab" data-tab="view">Вид</div>
+    <div class="tab" data-tab="mp">Мультиплеер</div>
+    <div class="tab ctx hidden" data-tab="text">Текст</div>
+    <div class="tabs-right">
+      <button class="tbtn" id="ribbonToggle" title="Свернуть ленту (Ctrl+F1)" data-icon="collapse"></button>
+      <button class="tbtn" id="helpBtn" title="Справка" data-icon="help"></button>
+    </div>
+  </div>
+
+  <div id="ribbon">
+    <!-- ======================= HOME ======================= -->
+    <div class="panel" data-panel="home">
+      <div class="group">
+        <div class="gbody">
+          <div class="bigsplit">
+            <button class="big-top" data-cmd="paste" title="Вставить (Ctrl+V)"><i data-icon="paste32"></i></button>
+            <button class="big-bottom" data-menu="paste">Вставить<i class="arr" data-icon="arrowDown"></i></button>
+          </div>
+          <div class="col">
+            <button class="small" data-cmd="cut" title="Вырезать (Ctrl+X)"><i data-icon="cut"></i><span>Вырезать</span></button>
+            <button class="small" data-cmd="copy" title="Копировать (Ctrl+C)"><i data-icon="copy"></i><span>Копировать</span></button>
+          </div>
+        </div>
+        <div class="glabel">Буфер обмена</div>
+      </div>
+
+      <div class="group">
+        <div class="gbody">
+          <div class="bigsplit" id="selectBtn">
+            <button class="big-top" data-tool="select" title="Выделить"><i data-icon="select32"></i></button>
+            <button class="big-bottom" data-menu="select">Выделить<i class="arr" data-icon="arrowDown"></i></button>
+          </div>
+          <div class="col">
+            <button class="small" data-cmd="crop" title="Обрезать (Ctrl+Shift+X)"><i data-icon="crop"></i><span>Обрезать</span></button>
+            <button class="small" data-cmd="resize" title="Изменить размер и наклонить (Ctrl+W)"><i data-icon="resize"></i><span>Изменить размер</span></button>
+            <button class="small" data-menu="rotate" title="Повернуть"><i data-icon="rotate"></i><span>Повернуть</span><i class="arr" data-icon="arrowDown"></i></button>
+          </div>
+        </div>
+        <div class="glabel">Изображение</div>
+      </div>
+
+      <div class="group">
+        <div class="gbody">
+          <div class="tools-grid">
+            <button class="tool" data-tool="pencil" title="Карандаш"><i data-icon="pencil"></i></button>
+            <button class="tool" data-tool="fill" title="Заливка цветом"><i data-icon="bucket"></i></button>
+            <button class="tool" data-tool="text" title="Текст"><i data-icon="text"></i></button>
+            <button class="tool" data-tool="eraser" title="Ластик"><i data-icon="eraser"></i></button>
+            <button class="tool" data-tool="picker" title="Палитра"><i data-icon="picker"></i></button>
+            <button class="tool" data-tool="zoom" title="Масштаб"><i data-icon="magnifier"></i></button>
+          </div>
+        </div>
+        <div class="glabel">Инструменты</div>
+      </div>
+
+      <div class="group">
+        <div class="gbody">
+          <div class="bigsplit" id="brushBtn">
+            <button class="big-top" data-tool="brush" title="Кисти"><i id="brushIcon" data-icon="brush32"></i></button>
+            <button class="big-bottom" data-menu="brushes">Кисти<i class="arr" data-icon="arrowDown"></i></button>
+          </div>
+        </div>
+        <div class="glabel">&nbsp;</div>
+      </div>
+
+      <div class="group">
+        <div class="gbody">
+          <div class="gallery" id="shapeGallery">
+            <div class="gal-items"></div>
+            <div class="gal-scroll">
+              <button class="gal-up" title="Вверх" data-icon="galUp"></button>
+              <button class="gal-down" title="Вниз" data-icon="galDown"></button>
+              <button class="gal-more" title="Другие" data-icon="galMore"></button>
+            </div>
+          </div>
+          <div class="col">
+            <button class="small" data-menu="outline" id="outlineBtn" title="Контур фигуры"><i data-icon="outline"></i><span>Контур</span><i class="arr" data-icon="arrowDown"></i></button>
+            <button class="small" data-menu="fillstyle" id="fillBtn" title="Заливка фигуры"><i data-icon="fillstyle"></i><span>Заливка</span><i class="arr" data-icon="arrowDown"></i></button>
+          </div>
+        </div>
+        <div class="glabel">Фигуры</div>
+      </div>
+
+      <div class="group">
+        <div class="gbody">
+          <button class="big" data-menu="size" id="sizeBtn" title="Толщина (Ctrl+плюс, Ctrl+минус)"><i data-icon="size32"></i><span>Толщина<i class="arr" data-icon="arrowDown"></i></span></button>
+        </div>
+        <div class="glabel">&nbsp;</div>
+      </div>
+
+      <div class="group colors-group">
+        <div class="gbody">
+          <button class="big colorslot" data-slot="1" title="Цвет 1 (основной)&#10;Выберите цвет на палитре; он используется для карандаша, кистей и контуров фигур."><span class="swatch-frame big"><span class="sw" id="sw1"></span></span><span>Цвет<br>1</span></button>
+          <button class="big colorslot" data-slot="2" title="Цвет 2 (фон)&#10;Используется для ластика и заливки фигур."><span class="swatch-frame"><span class="sw" id="sw2"></span></span><span>Цвет<br>2</span></button>
+          <div class="palette" id="palette"></div>
+          <button class="big" data-cmd="editColors" title="Изменение цветов"><i data-icon="editcolors32"></i><span>Изменение<br>цветов</span></button>
+        </div>
+        <div class="glabel">Цвета</div>
+      </div>
+    </div>
+
+    <!-- ======================= VIEW ======================= -->
+    <div class="panel hidden" data-panel="view">
+      <div class="group">
+        <div class="gbody">
+          <button class="big" data-cmd="zoomIn" title="Увеличить (Ctrl+PgUp)"><i data-icon="zoomIn32"></i><span>Увеличить</span></button>
+          <button class="big" data-cmd="zoomOut" title="Уменьшить (Ctrl+PgDn)"><i data-icon="zoomOut32"></i><span>Уменьшить</span></button>
+          <button class="big" data-cmd="zoom100" title="100%"><i data-icon="zoom100_32"></i><span>100%</span></button>
+        </div>
+        <div class="glabel">Масштаб</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <div class="col checks">
+            <label class="chk"><input type="checkbox" id="chkRulers"><span class="box"></span>Линейки</label>
+            <label class="chk"><input type="checkbox" id="chkGrid"><span class="box"></span>Линии сетки</label>
+            <label class="chk"><input type="checkbox" id="chkStatus" checked><span class="box"></span>Строка состояния</label>
+          </div>
+        </div>
+        <div class="glabel">Показать или скрыть</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <button class="big" data-cmd="fullscreen" title="Во весь экран (F11)"><i data-icon="fullscreen32"></i><span>Во весь<br>экран</span></button>
+          <button class="big" data-cmd="thumbnail" id="thumbBtn" title="Эскиз"><i data-icon="thumb32"></i><span>Эскиз</span></button>
+        </div>
+        <div class="glabel">Экран</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <div class="col">
+            <button class="small" data-cmd="langRu" id="langRu"><i data-icon="langRu"></i><span>Русский</span></button>
+            <button class="small" data-cmd="langEn" id="langEn"><i data-icon="langEn"></i><span>English</span></button>
+          </div>
+        </div>
+        <div class="glabel">Язык</div>
+      </div>
+    </div>
+
+    <!-- ======================= MULTIPLAYER ======================= -->
+    <div class="panel hidden" data-panel="mp">
+      <div class="group">
+        <div class="gbody steam-info">
+          <div class="avatar" id="myAvatar"></div>
+          <div class="steam-lines">
+            <div id="steamName" class="strong">Steam: подключение…</div>
+            <div class="muted">AppID 480 (Spacewar)</div>
+            <div id="steamState" class="muted">Не в лобби</div>
+          </div>
+        </div>
+        <div class="glabel">Steam</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <div class="bigsplit">
+            <button class="big-top" data-cmd="mpCreate" title="Создать лобби (публичное)"><i data-icon="mpCreate32"></i></button>
+            <button class="big-bottom" data-menu="lobbyType">Создать<br>лобби<i class="arr" data-icon="arrowDown"></i></button>
+          </div>
+          <button class="big" data-cmd="mpInvite" title="Пригласить друзей через оверлей Steam"><i data-icon="mpInvite32"></i><span>Пригласить<br>друзей</span></button>
+          <button class="big" data-cmd="mpBrowse" title="Найти открытые лобби"><i data-icon="mpBrowse32"></i><span>Найти<br>лобби</span></button>
+          <div class="col">
+            <button class="small" data-cmd="mpJoinCode" title="Войти в лобби по коду"><i data-icon="mpKey"></i><span>Войти по коду</span></button>
+            <button class="small" data-cmd="mpCopyCode" title="Скопировать код лобби в буфер обмена"><i data-icon="mpCopy"></i><span>Скопировать код</span></button>
+            <button class="small" data-cmd="mpLeave" title="Покинуть лобби"><i data-icon="mpLeave"></i><span>Покинуть лобби</span></button>
+          </div>
+        </div>
+        <div class="glabel">Лобби</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <div id="playerList" class="player-list"></div>
+        </div>
+        <div class="glabel">Участники</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <div class="col checks">
+            <label class="chk"><input type="checkbox" id="chkCursors" checked><span class="box"></span>Курсоры игроков</label>
+            <label class="chk"><input type="checkbox" id="chkNames" checked><span class="box"></span>Имена у курсоров</label>
+            <label class="chk"><input type="checkbox" id="chkLive" checked><span class="box"></span>Рисование вживую</label>
+          </div>
+        </div>
+        <div class="glabel">Параметры</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <button class="big" data-cmd="mpLog" title="Открыть папку с журналом сети (net.log) — пришлите его, если что-то работает не так"><i data-icon="mpLog32"></i><span>Журнал<br>сети</span></button>
+        </div>
+        <div class="glabel">Диагностика</div>
+      </div>
+    </div>
+
+    <!-- ======================= TEXT (contextual) ======================= -->
+    <div class="panel hidden" data-panel="text">
+      <div class="group">
+        <div class="gbody">
+          <div class="bigsplit">
+            <button class="big-top" data-cmd="paste" title="Вставить (Ctrl+V)"><i data-icon="paste32"></i></button>
+            <button class="big-bottom" data-menu="paste">Вставить<i class="arr" data-icon="arrowDown"></i></button>
+          </div>
+          <div class="col">
+            <button class="small" data-cmd="cut"><i data-icon="cut"></i><span>Вырезать</span></button>
+            <button class="small" data-cmd="copy"><i data-icon="copy"></i><span>Копировать</span></button>
+          </div>
+        </div>
+        <div class="glabel">Буфер обмена</div>
+      </div>
+      <div class="group">
+        <div class="gbody font-body">
+          <div class="font-row">
+            <div class="combo" id="fontCombo"><input id="fontFamily" spellcheck="false"><button class="combo-btn" tabindex="-1" data-icon="arrowDown"></button></div>
+            <div class="combo small-combo" id="sizeCombo"><input id="fontSize" spellcheck="false"><button class="combo-btn" tabindex="-1" data-icon="arrowDown"></button></div>
+          </div>
+          <div class="font-row">
+            <button class="fbtn" id="btnBold" title="Полужирный (Ctrl+B)" data-icon="bold"></button>
+            <button class="fbtn" id="btnItalic" title="Курсив (Ctrl+I)" data-icon="italic"></button>
+            <button class="fbtn" id="btnUnderline" title="Подчеркнутый (Ctrl+U)" data-icon="underline"></button>
+            <button class="fbtn" id="btnStrike" title="Зачеркнутый" data-icon="strike"></button>
+          </div>
+        </div>
+        <div class="glabel">Шрифт</div>
+      </div>
+      <div class="group">
+        <div class="gbody">
+          <div class="col">
+            <button class="small" id="btnOpaque" title="Непрозрачный: фон текста заливается цветом 2"><i data-icon="opaque"></i><span>Непрозрачный</span></button>
+            <button class="small" id="btnTransparent" title="Прозрачный"><i data-icon="transparent"></i><span>Прозрачный</span></button>
+          </div>
+        </div>
+        <div class="glabel">Фон</div>
+      </div>
+      <div class="group colors-group">
+        <div class="gbody">
+          <button class="big colorslot" data-slot="1"><span class="swatch-frame big"><span class="sw sw1"></span></span><span>Цвет<br>1</span></button>
+          <button class="big colorslot" data-slot="2"><span class="swatch-frame"><span class="sw sw2"></span></span><span>Цвет<br>2</span></button>
+          <div class="palette palette2"></div>
+          <button class="big" data-cmd="editColors"><i data-icon="editcolors32"></i><span>Изменение<br>цветов</span></button>
+        </div>
+        <div class="glabel">Цвета</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="rulerCorner" class="hidden"></div>
+    <canvas id="rulerH" class="hidden"></canvas>
+    <canvas id="rulerV" class="hidden"></canvas>
+    <div id="workspace">
+      <div id="stage">
+        <div id="canvasWrap">
+          <canvas id="cvMain"></canvas>
+          <div id="remoteLayers"></div>
+          <canvas id="cvPending"></canvas>
+          <canvas id="cvPreview"></canvas>
+          <div id="grid" class="hidden"></div>
+          <div id="uiLayer"></div>
+          <div id="cursorLayer"></div>
+        </div>
+        <div class="cv-handle" data-h="r"></div>
+        <div class="cv-handle" data-h="b"></div>
+        <div class="cv-handle" data-h="rb"></div>
+        <div id="resizeGhost" class="hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <div class="sb-item sb-pos"><i data-icon="sbPos"></i><span id="sbPos"></span></div>
+    <div class="sb-item sb-sel"><i data-icon="sbSel"></i><span id="sbSel"></span></div>
+    <div class="sb-item sb-size"><i data-icon="sbSize"></i><span id="sbSize"></span></div>
+    <div class="sb-item sb-file"><i data-icon="sbFile"></i><span id="sbFile"></span></div>
+    <div class="sb-item sb-net" id="sbNetWrap"><i data-icon="sbNet"></i><span id="sbNet"></span></div>
+    <div class="sb-zoom">
+      <span id="zoomText">100%</span>
+      <button id="zoomOutBtn" title="Уменьшить">&#8722;</button>
+      <div id="zoomSlider" title="Масштаб"><div class="track"></div><div class="tick"></div><div class="thumb"></div></div>
+      <button id="zoomInBtn" title="Увеличить">+</button>
+    </div>
+  </div>
+</div>
+
+<div id="fullscreenView" class="hidden"><canvas></canvas></div>
+<div id="thumbWin" class="hidden"><div class="thumb-title">Эскиз<button class="x">&#x2715;</button></div><canvas></canvas></div>
+<div id="connectOverlay" class="hidden"><div class="connect-box"><div class="spinner"></div><div id="connectText">Подключение к лобби…</div><button id="connectCancel">Отмена</button></div></div>
+<div id="layer-menus"></div>
+<div id="layer-dialogs"></div>
+<div id="tooltip" class="hidden"></div>
+
+<script src="js/i18n.js"></script>
+<script src="js/util.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/raster.js"></script>
+<script src="js/doc.js"></script>
+<script src="js/net.js"></script>
+<script src="js/view.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/dialogs.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

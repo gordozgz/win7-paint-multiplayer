@@ -1,0 +1,35 @@
+{
+  "name": "win7-paint-multiplayer",
+  "productName": "Paint",
+  "version": "1.2.0",
+  "description": "Windows 7 Paint clone with Steam multiplayer: draw together with friends over Steam P2P (AppID 480 / Spacewar)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "node build/pack.js",
+    "icon": "electron build/make-icon.js",
+    "web": "python build/devserver.py 8765"
+  },
+  "keywords": [
+    "paint",
+    "mspaint",
+    "windows-7",
+    "steam",
+    "steamworks",
+    "multiplayer",
+    "electron",
+    "drawing"
+  ],
+  "author": "gordozgz",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "pe-library": "^1.0.1",
+    "resedit": "^2.0.3"
+  },
+  "dependencies": {
+    "koffi": "^3.3.3",
+    "steamworks.js": "^0.4.0"
+  }
+}
