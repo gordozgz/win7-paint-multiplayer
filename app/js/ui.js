@@ -15,6 +15,77 @@
     }
   }
 
+  // ------------------------------------------------------------ native menus
+  // In Paint.exe every dropdown and context menu is a standard Windows menu
+  // (built by the main process); the HTML menus further below are kept for
+  // the browser test build.
+  const native = window.native || null
+  UI.nativeMenus = !!(native && native.popupMenu)
+
+  const iconCache = new Map()
+  function svgPNG (svg, w, hh) {
+    const dpr = window.devicePixelRatio || 1
+    const key = svg + '|' + w + 'x' + hh + '@' + dpr
+    if (iconCache.has(key)) return iconCache.get(key)
+    const p = new Promise(resolve => {
+      if (!/xmlns=/.test(svg)) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')
+      const img = new Image()
+      img.onload = () => {
+        const c = U.canvas(Math.round(w * dpr), Math.round(hh * dpr))
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+        resolve({ url: c.toDataURL('image/png'), scale: dpr })
+      }
+      img.onerror = () => resolve(null)
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+    })
+    iconCache.set(key, p)
+    return p
+  }
+  // item icon: icon (name in P.icons), iconSVG (markup) or iconURL (bitmap)
+  function menuIcon (it) {
+    if (it.iconURL) return Promise.resolve({ url: it.iconURL, scale: it.iconScale || 1 })
+    const svg = it.iconSVG || (it.icon && P.icons[it.icon])
+    if (!svg || typeof svg !== 'string') return Promise.resolve(null)
+    return svgPNG(svg, 16, 16)
+  }
+
+  async function toNative (items, actions) {
+    const out = []
+    for (const it of items) {
+      if (!it || it.el) continue
+      if (it.sep || it.head) {
+        if (out.length && !out[out.length - 1].sep) out.push({ sep: true })
+        continue
+      }
+      const o = { label: P.T(it.label) + (it.desc ? ' — ' + P.T(it.desc) : ''), disabled: !!it.disabled }
+      if (it.shortcut) o.shortcut = it.shortcut
+      if (it.radio) { o.type = 'radio'; o.checked = !!it.checked } else if (it.checked != null) { o.type = 'checkbox'; o.checked = !!it.checked }
+      o.icon = await menuIcon(it)
+      if (it.sub) o.sub = await toNative(typeof it.sub === 'function' ? it.sub() : it.sub, actions)
+      else { o.id = actions.length; actions.push(it.action || null) }
+      out.push(o)
+    }
+    while (out.length && out[out.length - 1].sep) out.pop()
+    return out
+  }
+
+  let nativeOpen = false
+  async function popupNative (items, x, y, anchor) {
+    if (nativeOpen) return
+    nativeOpen = true
+    const actions = []
+    try {
+      const tpl = await toNative(items, actions)
+      if (anchor) anchor.classList.add('open')
+      let id = null
+      try { id = await native.popupMenu(tpl, x, y) } finally { if (anchor) anchor.classList.remove('open') }
+      if (id != null && actions[id]) actions[id]()
+    } finally {
+      nativeOpen = false
+    }
+  }
+  const canNative = items => UI.nativeMenus && items.every(i => !i || !i.el)
+
   // ------------------------------------------------------------ menus
   const layer = () => $('#layer-menus')
   let stack = []
@@ -45,7 +116,7 @@
       if (it.el) { el.appendChild(it.el); continue }
       const row = h('div.mi' + (it.big ? '.big-mi' : '') + (it.disabled ? '.disabled' : '') + (it.checked ? '.checked' : ''),
         null,
-        h('span.mic', { html: it.icon ? (P.icons[it.icon] || it.icon) : '' }),
+        h('span.mic', { html: it.iconURL ? '<img width="16" height="16" src="' + it.iconURL + '">' : it.iconSVG || (it.icon ? (P.icons[it.icon] || it.icon) : '') }),
         h('span.mlabel', { html: it.desc ? '<span>' + P.T(it.label) + '</span><span class="mdesc">' + P.T(it.desc) + '</span>' : P.T(it.label) }),
         it.shortcut ? h('span.msc', { text: it.shortcut }) : null,
         it.sub ? h('span.msub', { html: P.icons.arrowRight }) : null)
@@ -90,6 +161,11 @@
   UI.dropdown = function (anchor, items) {
     UI.closeMenus()
     if (!items) return
+    if (canNative(items)) {
+      const r = anchor.getBoundingClientRect()
+      popupNative(items, r.left, r.bottom, anchor)
+      return null
+    }
     anchorEl = anchor
     anchor.classList.add('open')
     const r = anchor.getBoundingClientRect()
@@ -98,6 +174,7 @@
 
   UI.contextMenu = function (x, y, items) {
     UI.closeMenus()
+    if (canNative(items)) { popupNative(items, x, y, null); return null }
     return openAt(items, { x, y, above: y }, 0)
   }
 
@@ -192,6 +269,19 @@
   }
 
   // ------------------------------------------------------------ shapes gallery
+  UI.shapeSVG = k => '<svg viewBox="0 0 16 16" width="16" height="16" xmlns="http://www.w3.org/2000/svg"><path d="' + R.shapeIcon(k) + '" fill="none" stroke="#1f1f1f" stroke-width="1" stroke-linejoin="round"/></svg>'
+
+  // 16×16 sample of a line thickness, for the Size menu
+  UI.lineSample = function (px) {
+    const dpr = window.devicePixelRatio || 1
+    const c = U.canvas(Math.round(16 * dpr), Math.round(16 * dpr))
+    const ctx = c.getContext('2d')
+    const hh = Math.max(1, Math.round(Math.min(12, px) * dpr))
+    ctx.fillStyle = '#1f1f1f'
+    ctx.fillRect(Math.round(dpr), Math.round((c.height - hh) / 2), c.width - 2 * Math.round(dpr), hh)
+    return { url: c.toDataURL('image/png'), scale: dpr }
+  }
+
   let galRow = 0
   UI.renderShapes = function () {
     const A = P.app
@@ -217,6 +307,17 @@
     $('#shapeGallery .gal-down').addEventListener('click', () => { galRow = Math.min(rows - 3, galRow + 1); $('#shapeGallery .gal-items').scrollTop = galRow * 20; UI.updateGalleryArrows() })
     $('#shapeGallery .gal-more').addEventListener('click', e => {
       const A = P.app
+      if (UI.nativeMenus) {
+        e.stopPropagation()
+        UI.dropdown($('#shapeGallery .gal-more'), R.SHAPES.map(k => ({
+          label: R.SHAPE_NAMES[k],
+          iconSVG: UI.shapeSVG(k),
+          radio: true,
+          checked: A.tool === 'shape' && A.shape === k,
+          action: () => A.selectShape(k)
+        })))
+        return
+      }
       const grid = h('div.tile-gallery', { style: { gridTemplateColumns: 'repeat(7, 24px)' } })
       R.SHAPES.forEach(k => {
         const t = h('div.tile' + (A.tool === 'shape' && A.shape === k ? '.on' : ''), { title: R.SHAPE_NAMES[k], style: { width: '24px', height: '24px' } })
@@ -295,6 +396,45 @@
   // ------------------------------------------------------------ file menu
   UI.openFileMenu = function () {
     const A = P.app
+    if (UI.nativeMenus) {
+      const rec = A.recentFiles()
+      const r = $('#fileTab').getBoundingClientRect()
+      popupNative([
+        { icon: 'fileNew', label: 'Создать', shortcut: 'Ctrl+N', action: () => A.cmd('new') },
+        { icon: 'fileOpen', label: 'Открыть', shortcut: 'Ctrl+O', action: () => A.cmd('open') },
+        { icon: 'fileSave', label: 'Сохранить', shortcut: 'Ctrl+S', action: () => A.cmd('save') },
+        {
+          icon: 'fileSaveAs',
+          label: 'Сохранить как',
+          sub: [
+            { icon: 'fmtPNG', label: 'Изображение в формате PNG', action: () => A.saveAs('png') },
+            { icon: 'fmtJPG', label: 'Изображение в формате JPEG', action: () => A.saveAs('jpg') },
+            { icon: 'fmtBMP', label: 'Изображение в формате BMP', action: () => A.saveAs('bmp') },
+            { icon: 'fmtGIF', label: 'Изображение в формате GIF', disabled: true },
+            { sep: true },
+            { icon: 'fmtOther', label: 'Другие форматы', shortcut: 'F12', action: () => A.saveAs(null) }
+          ]
+        },
+        {
+          label: 'Последние изображения',
+          disabled: !rec.length,
+          sub: rec.length
+            ? rec.map((p, i) => ({ label: (i + 1) + '  ' + p.split(/[\\/]/).pop(), action: () => A.openRecent(p) }))
+            : [{ label: 'Список пуст', disabled: true }]
+        },
+        { sep: true },
+        { icon: 'filePrint', label: 'Печать', disabled: true },
+        { icon: 'fileScan', label: 'Со сканера или камеры', disabled: true },
+        { icon: 'fileMail', label: 'Отправить по электронной почте', disabled: true },
+        { icon: 'fileDesktop', label: 'Сделать фоном рабочего стола', disabled: true },
+        { sep: true },
+        { icon: 'fileProps', label: 'Свойства', shortcut: 'Ctrl+E', action: () => A.cmd('properties') },
+        { icon: 'fileAbout', label: 'О программе Paint', action: () => P.dialogs.about() },
+        { sep: true },
+        { icon: 'fileExit', label: 'Выход', shortcut: 'Alt+F4', action: () => A.cmd('exit') }
+      ], r.left, r.bottom, $('#fileTab'))
+      return
+    }
     if ($('#fileTab').classList.contains('open')) { UI.closeMenus(); return }
     UI.closeMenus()
     $('#fileTab').classList.add('open')

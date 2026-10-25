@@ -75,16 +75,31 @@
 
   function setCursor (c) { if (V.ws.style.cursor !== c) V.ws.style.cursor = c }
 
+  // A fast mouse sends many (coalesced) moves per frame; previews are drawn
+  // at most once per frame.
+  function frameRenderer (fn) {
+    let id = 0
+    const run = () => { id = 0; fn() }
+    return {
+      soon () { if (!id) id = requestAnimationFrame(run) },
+      cancel () { if (id) { cancelAnimationFrame(id); id = 0 } }
+    }
+  }
+
   // ------------------------------------------------------------ stroke tools
   function StrokeTool (kind) {
     let op = null; let drawn = 0; let timer = null; let last = null
     const render = () => {
+      frame.cancel()
+      if (!op) return
       if (R.isFull(op)) { V.clearPreview(); R.drawStroke(V.pctx, op, 0, D.ctx) } else { R.drawStroke(V.pctx, op, drawn, D.ctx); drawn = op.p.length >> 1 }
       S.livePoints(op)
     }
+    const frame = frameRenderer(render)
     const finish = () => {
       if (!op) return
       clearInterval(timer)
+      frame.cancel()
       const o = op; op = null
       S.liveEnd(o)
       V.clearPreview()
@@ -117,13 +132,14 @@
         const p = op.p
         if (p[p.length - 2] === pt.x && p[p.length - 1] === pt.y) return
         p.push(pt.x, pt.y)
-        render()
+        frame.soon()
       },
       up () { finish() },
       commit () { finish() },
       cancel () {
         if (!op) return
         clearInterval(timer)
+        frame.cancel()
         S.liveCancel(op.id)
         op = null
         V.clearPreview()
@@ -152,11 +168,44 @@
     }
   }
 
-  const ZoomTool = {
-    name: 'zoom',
-    cursor: () => P.cursors.zoom,
-    down (e) { V.zoomStep(e.button === 2 ? -1 : 1, e.clientX, e.clientY) }
-  }
+  // Magnifier: click zooms in (right click out), dragging a frame zooms so
+  // the framed area fills the window.
+  const ZoomTool = (function () {
+    let drag = null
+    const box = makeBox('marquee')
+    const rect = () => {
+      const a = clampPt(drag.a); const b = clampPt(drag.b)
+      return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x) + 1, h: Math.abs(b.y - a.y) + 1 }
+    }
+    return {
+      name: 'zoom',
+      cursor: () => P.cursors.zoom,
+      busy: () => !!drag,
+      down (e, pt) { drag = { a: pt, b: pt, cx: e.clientX, cy: e.clientY, btn: e.button, moved: false } },
+      move (e, pt) {
+        if (!drag) return
+        drag.b = pt
+        if (Math.abs(e.clientX - drag.cx) > 4 || Math.abs(e.clientY - drag.cy) > 4) drag.moved = true
+        if (drag.moved && drag.btn === 0) {
+          const r = rect()
+          box.show(r, false)
+          P.ui.status('Sel', P.T('{w} × {h}пкс', { w: r.w, h: r.h }))
+        }
+      },
+      up (e) {
+        const d = drag
+        if (!d) return
+        const r = d.moved && d.btn === 0 ? rect() : null
+        drag = null
+        box.hide()
+        P.ui.status('Sel', '')
+        if (r) V.zoomToRect(r)
+        else V.zoomStep(d.btn === 2 ? -1 : 1, d.cx, d.cy)
+      },
+      cancel () { drag = null; box.hide(); P.ui.status('Sel', '') },
+      onZoom () { if (drag && drag.moved) box.show(rect(), false) }
+    }
+  })()
 
   // ------------------------------------------------------------ shapes
   const ShapeTool = (function () {
@@ -186,7 +235,9 @@
       else op.b = [st.a.x, st.a.y, st.b.x, st.b.y]
       return op
     }
+    const frame = frameRenderer(() => render())
     function render () {
+      frame.cancel()
       V.clearPreview()
       if (!st) { box.hide(); return }
       if (st.k === 'polygon' && st.mode !== 'done') {
@@ -302,35 +353,35 @@
         if (st.mode === 'drag') {
           st.b = constrain(e, st.a, pt)
           if (st.k === 'polygon') { st.pts[2] = st.b.x; st.pts[3] = st.b.y }
-          render()
+          frame.soon()
           return
         }
         const d = st.drag
         if (!d) return
-        if (d.type === 'end') { st[d.which] = { x: pt.x, y: pt.y }; render() }
+        if (d.type === 'end') { st[d.which] = { x: pt.x, y: pt.y }; frame.soon() }
         else if (d.type === 'move') {
           const dx = pt.x - d.start.x; const dy = pt.y - d.start.y
           st.a = { x: d.a.x + dx, y: d.a.y + dy }; st.b = { x: d.b.x + dx, y: d.b.y + dy }
-          render()
+          frame.soon()
         } else if (d.type === 'handle') {
           const nb = applyHandle(d.orig, d.h, pt.x - d.start.x, pt.y - d.start.y)
           st.a = { x: nb.x, y: nb.y }; st.b = { x: nb.x + nb.w - 1, y: nb.y + nb.h - 1 }
-          render()
+          frame.soon()
         } else if (d.type === 'ctrl') {
           if (st.stage === 1) { st.pts[2] = st.pts[4] = pt.x; st.pts[3] = st.pts[5] = pt.y } else { st.pts[4] = pt.x; st.pts[5] = pt.y }
-          render()
+          frame.soon()
         } else if (d.type === 'vertex') {
           const n = st.pts.length
           const p = constrain(e, { x: st.pts[n - 4], y: st.pts[n - 3] }, pt)
           st.pts[n - 2] = p.x; st.pts[n - 1] = p.y
-          render()
+          frame.soon()
         }
       },
       hover (e, pt) {
         if (!st) { setCursor(inCanvas(pt) ? 'crosshair' : 'default'); return }
         if (st.mode === 'poly') {
           st.hover = constrain(e, { x: st.pts[st.pts.length - 2], y: st.pts[st.pts.length - 1] }, pt)
-          render()
+          frame.soon()
           setCursor('crosshair')
           return
         }
@@ -443,21 +494,63 @@
       if (sel.floating) return { x: sel.x, y: sel.y, w: sel.w, h: sel.h }
       return sel.box
     }
+    const frame = frameRenderer(() => render())
+    const lassoFrame = frameRenderer(() => {
+      if (!lasso) return
+      const ctx = V.pctx
+      V.clearPreview()
+      ctx.save(); ctx.strokeStyle = '#000'; ctx.lineWidth = 1 / Math.min(1, V.zoom)
+      ctx.beginPath(); ctx.moveTo(lasso[0] + 0.5, lasso[1] + 0.5)
+      for (let i = 2; i < lasso.length; i += 2) ctx.lineTo(lasso[i] + 0.5, lasso[i + 1] + 0.5)
+      ctx.stroke(); ctx.restore()
+    })
+    // draws the floating selection's pixels at its current size
+    function drawFloating (ctx, x, y) {
+      ctx.save()
+      R.setResample(ctx, sel.w === sel.img.width && sel.h === sel.img.height ? 'nearest' : A.resample)
+      ctx.drawImage(processed(), x, y, sel.w, sel.h)
+      ctx.restore()
+    }
     function render () {
+      frame.cancel()
       V.clearPreview()
       if (!sel) { box.hide(); P.ui.status('Sel', ''); return }
       if (sel.floating) {
         const ctx = V.pctx
         if (sel.cut) R.fillRegion(ctx, sel.region, sel.cc)
-        ctx.save()
-        ctx.imageSmoothingEnabled = !(sel.w === sel.img.width && sel.h === sel.img.height)
-        ctx.imageSmoothingQuality = 'high'
-        ctx.drawImage(processed(), sel.x, sel.y, sel.w, sel.h)
-        ctx.restore()
+        if (drag && drag.trail) ctx.drawImage(drag.trail.cv, 0, 0)
+        drawFloating(ctx, sel.x, sel.y)
       }
       const b = curBox()
       box.show(b)
       P.ui.status('Sel', P.T('{w} × {h}пкс', { w: b.w, h: b.h }))
+    }
+    // Shift-drag: a copy is left at every position the selection passes
+    function addTrail () {
+      if (!drag.trail) drag.trail = { pts: [], cv: U.canvas(D.width(), D.height()) }
+      const t = drag.trail; const n = t.pts.length
+      if (n && t.pts[n - 2] === sel.x && t.pts[n - 1] === sel.y) return
+      t.pts.push(sel.x, sel.y)
+      drawFloating(t.cv.getContext('2d'), sel.x, sel.y)
+    }
+    function submitTrail (t) {
+      if (!t || !t.pts.length) return
+      const src = processed()
+      const c = U.canvas(src.width, src.height)
+      c.getContext('2d').drawImage(src, 0, 0)
+      const op = { t: 'stamp', x: t.pts[0], y: t.pts[1], w: sel.w, h: sel.h, trail: t.pts, rs: A.resample, img: c.toDataURL('image/png'), _img: c }
+      if (sel.cut) { op.cut = sel.region; op.cc = sel.cc }
+      S.submit(op)
+      // the hole is filled now; the final drop must not clear it again
+      sel.cut = false
+      sel.dirty = true
+    }
+    // corner handles with Shift keep the proportions
+    function keepRatio (nb, o, n) {
+      if (n.length !== 2) return nb
+      const k = Math.max(nb.w / o.w, nb.h / o.h)
+      const w = Math.max(1, Math.round(o.w * k)); const h = Math.max(1, Math.round(o.h * k))
+      return { x: n.includes('w') ? o.x + o.w - w : o.x, y: n.includes('n') ? o.y + o.h - h : o.y, w, h }
     }
     function lift (copy) {
       if (!sel || sel.floating) return
@@ -475,12 +568,13 @@
       const src = processed()
       const c = U.canvas(src.width, src.height)
       c.getContext('2d').drawImage(src, 0, 0)
-      const op = { t: 'stamp', x: sel.x, y: sel.y, w: sel.w, h: sel.h, img: c.toDataURL('image/png'), _img: c }
+      const op = { t: 'stamp', x: sel.x, y: sel.y, w: sel.w, h: sel.h, rs: A.resample, img: c.toDataURL('image/png'), _img: c }
       if (sel.cut) { op.cut = sel.region; op.cc = sel.cc }
       S.submit(op)
     }
     function commit () {
       if (!sel) return
+      if (drag && drag.trail) submitTrail(drag.trail)
       stamp()
       sel = null
       drag = null
@@ -518,7 +612,9 @@
           if (inBox(e, b, 0)) {
             if (sel.floating && e.ctrlKey) { stamp(); sel.cut = false; sel.dirty = true }
             lift(e.ctrlKey)
-            drag = { type: 'move', start: pt, ox: sel.x, oy: sel.y }
+            if (!sel) return
+            drag = { type: 'move', start: pt, ox: sel.x, oy: sel.y, trail: null }
+            if (e.shiftKey) addTrail()
             render()
             return
           }
@@ -536,12 +632,7 @@
           const p = clampPt(pt)
           const n = lasso.length
           if (lasso[n - 2] !== p.x || lasso[n - 1] !== p.y) lasso.push(p.x, p.y)
-          const ctx = V.pctx
-          V.clearPreview()
-          ctx.save(); ctx.strokeStyle = '#000'; ctx.lineWidth = 1 / Math.min(1, V.zoom)
-          ctx.beginPath(); ctx.moveTo(lasso[0] + 0.5, lasso[1] + 0.5)
-          for (let i = 2; i < lasso.length; i += 2) ctx.lineTo(lasso[i] + 0.5, lasso[i + 1] + 0.5)
-          ctx.stroke(); ctx.restore()
+          lassoFrame.soon()
           return
         }
         if (!drag) return
@@ -554,11 +645,12 @@
         } else if (drag.type === 'move') {
           sel.x = drag.ox + pt.x - drag.start.x
           sel.y = drag.oy + pt.y - drag.start.y
-          render()
+          if (e.shiftKey) addTrail()
+          frame.soon()
         } else if (drag.type === 'handle') {
           const nb = applyHandle(drag.orig, drag.h, pt.x - drag.start.x, pt.y - drag.start.y)
-          Object.assign(sel, nb)
-          render()
+          Object.assign(sel, e.shiftKey ? keepRatio(nb, drag.orig, drag.h) : nb)
+          frame.soon()
         }
       },
       hover (e, pt) {
@@ -572,6 +664,7 @@
       up () {
         if (lasso) {
           const pts = lasso; lasso = null
+          lassoFrame.cancel()
           V.clearPreview()
           if (pts.length >= 6) {
             const region = { k: 'poly', pts }
@@ -590,7 +683,10 @@
           setSel({ region: { k: 'rect', x: r.x, y: r.y, w: r.w, h: r.h }, box: r, floating: false })
           return
         }
+        const t = drag.trail
         drag = null
+        if (t) submitTrail(t)
+        render()
       },
       key (e) {
         if (!sel) return false
@@ -635,9 +731,7 @@
         if (!sel) return null
         if (sel.floating) {
           const c = U.canvas(sel.w, sel.h)
-          const ctx = c.getContext('2d')
-          ctx.imageSmoothingQuality = 'high'
-          ctx.drawImage(processed(), 0, 0, sel.w, sel.h)
+          drawFloating(c.getContext('2d'), 0, 0)
           return c
         }
         const ex = R.extractRegion(D.ctx, sel.region)
@@ -678,9 +772,7 @@
         lift(false)
         if (!sel) return
         if (r.ax || r.ay) {
-          const scaled = U.canvas(sel.w, sel.h)
-          scaled.getContext('2d').drawImage(sel.img, 0, 0, sel.w, sel.h)
-          const out = R.skewCanvas(scaled, r.w, r.h, r.ax, r.ay, null)
+          const out = R.skewCanvas(sel.img, r.w, r.h, r.ax, r.ay, null, A.resample)
           sel.img = out; sel.w = out.width; sel.h = out.height
         } else { sel.w = r.w; sel.h = r.h }
         sel.dirty = true
@@ -700,9 +792,10 @@
         } else S.submit({ t: 'invert', region: sel.region })
         return true
       },
-      paste (img) {
+      // at: top-left corner in image pixels (default: top-left of the view)
+      paste (img, at) {
         commit()
-        const o = V.visibleOrigin()
+        const o = at || V.visibleOrigin()
         const c = U.canvas(img.width, img.height)
         c.getContext('2d').drawImage(img, 0, 0)
         setSel({ region: { k: 'rect', x: o.x, y: o.y, w: c.width, h: c.height }, box: { x: o.x, y: o.y, w: c.width, h: c.height }, floating: true, img: c, x: o.x, y: o.y, w: c.width, h: c.height, cut: false, dirty: true, pasted: true })

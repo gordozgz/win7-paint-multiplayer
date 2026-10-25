@@ -138,22 +138,9 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0)
   }
 
-  R.skewCanvas = function (src, w, h, ax, ay, bg) {
-    const tx = Math.tan((ax * Math.PI) / 180); const ty = Math.tan((ay * Math.PI) / 180)
-    const W2 = Math.max(1, Math.round(w + Math.abs(tx) * h)); const H2 = Math.max(1, Math.round(h + Math.abs(ty) * w))
-    const out = U.canvas(W2, H2)
-    const ctx = out.getContext('2d', { willReadFrequently: true })
-    if (bg) { ctx.fillStyle = U.css(bg); ctx.fillRect(0, 0, W2, H2) }
-    const ox = tx < 0 ? -tx * h : 0; const oy = ty < 0 ? -ty * w : 0
-    ctx.setTransform(1, ty, tx, 1, ox, oy)
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(src, 0, 0, w, h)
-    return out
-  }
-
   function applyScale (op) {
     const old = copyCanvas()
-    const out = R.skewCanvas(old, op.w, op.h, op.ax || 0, op.ay || 0, op.c || [255, 255, 255])
+    const out = R.skewCanvas(old, op.w, op.h, op.ax || 0, op.ay || 0, op.c || [255, 255, 255], op.rs)
     D.setSize(out.width, out.height)
     D.ctx.drawImage(out, 0, 0)
   }

@@ -1,5 +1,5 @@
 'use strict'
-const { app, BrowserWindow, ipcMain, dialog, clipboard, nativeImage, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, clipboard, nativeImage, shell, Menu, net } = require('electron')
 const path = require('path')
 const fs = require('fs')
 // Dev/test runs can use their own profile (and so their own instance lock).
@@ -13,6 +13,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 const steam = require('./steam')
+const win32 = require('./win32')
 
 steam.enableOverlay()
 
@@ -85,8 +86,10 @@ const L = s => (uiLang === 'en' && EN[s]) || s
 
 const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.jpe': 'image/jpeg', '.jfif': 'image/jpeg',
-  '.bmp': 'image/bmp', '.dib': 'image/bmp', '.gif': 'image/gif', '.ico': 'image/x-icon', '.webp': 'image/webp'
+  '.bmp': 'image/bmp', '.dib': 'image/bmp', '.gif': 'image/gif', '.ico': 'image/x-icon', '.webp': 'image/webp',
+  '.avif': 'image/avif', '.svg': 'image/svg+xml'
 }
+const IMAGE_EXTS = Object.keys(MIME).map(e => e.slice(1))
 
 function createWindow () {
   win = new BrowserWindow({
@@ -163,7 +166,7 @@ ipcMain.handle('file:open', async () => {
     title: L('Открыть'),
     properties: ['openFile'],
     filters: [
-      { name: L('Все файлы изображений'), extensions: ['bmp', 'dib', 'jpg', 'jpeg', 'jpe', 'jfif', 'gif', 'png', 'ico', 'webp'] },
+      { name: L('Все файлы изображений'), extensions: IMAGE_EXTS },
       { name: L('Все файлы'), extensions: ['*'] }
     ]
   })
@@ -203,14 +206,112 @@ ipcMain.handle('file:write', async (e, p, data) => {
   }
 })
 
-ipcMain.handle('clip:read', () => {
+// An image from the web, for drag & drop and paste of links (http/https only).
+const FETCH_MAX = 64 * 1024 * 1024
+async function fetchImage (url) {
+  if (!/^https?:\/\//i.test(String(url))) return null
+  try {
+    const r = await net.fetch(url)
+    const type = (r.headers.get('content-type') || '').split(';')[0].trim()
+    if (!r.ok || !type.startsWith('image/')) return null
+    const buf = Buffer.from(await r.arrayBuffer())
+    if (buf.length > FETCH_MAX) return null
+    return 'data:' + type + ';base64,' + buf.toString('base64')
+  } catch (e) {
+    log('[main] image download failed', e.message)
+    return null
+  }
+}
+
+const isImagePath = p => !!MIME[path.extname(p).toLowerCase()]
+
+// Paste: a bitmap, else an image file copied in Explorer, else a picture in
+// copied HTML (browsers), else a copied link or path to an image.
+async function clipboardImage () {
   const img = clipboard.readImage()
-  return img.isEmpty() ? null : img.toDataURL()
-})
+  if (!img.isEmpty()) return img.toDataURL()
+  let file = null
+  try {
+    const raw = clipboard.readBuffer('FileNameW')
+    if (raw && raw.length) file = raw.toString('utf16le').split('\0')[0]
+  } catch (e) {}
+  if (file && isImagePath(file)) { try { return readImageFile(file).dataURL } catch (e) {} }
+  const html = clipboard.readHTML() || ''
+  const m = html.match(/<img[^>]+src\s*=\s*["']([^"']+)["']/i)
+  const text = (clipboard.readText() || '').trim()
+  for (const s of [m && m[1].replace(/&amp;/g, '&'), text]) {
+    if (!s) continue
+    if (/^data:image\//i.test(s)) return s
+    if (/^https?:\/\//i.test(s)) { const u = await fetchImage(s); if (u) return u }
+    if (/^[a-z]:[\\/]/i.test(s) && isImagePath(s) && fs.existsSync(s)) { try { return readImageFile(s).dataURL } catch (e) {} }
+  }
+  return null
+}
+
+ipcMain.handle('clip:read', () => clipboardImage())
+ipcMain.handle('file:fetchImage', (e, url) => fetchImage(url))
 ipcMain.handle('clip:write', (e, url) => {
   clipboard.writeImage(nativeImage.createFromDataURL(url))
   return true
 })
+
+// ---- standard Windows menus and dialogs for the renderer's UI
+// Popup menu from a template: { id, label, type, checked, disabled,
+// shortcut, icon: {url, scale}, sub: [...] } | { sep: true }.
+// Resolves with the id of the clicked item, or null.
+ipcMain.handle('menu:popup', (e, items, x, y) => new Promise(resolve => {
+  if (!win) return resolve(null)
+  let done = false
+  const finish = v => { if (!done) { done = true; resolve(v) } }
+  const build = list => Menu.buildFromTemplate(list.map(it => {
+    if (it.sep) return { type: 'separator' }
+    const o = { label: String(it.label || '').replace(/&/g, '&&'), enabled: !it.disabled }
+    if (it.sub) o.submenu = build(it.sub)
+    else o.click = () => finish(it.id)
+    if (it.type === 'checkbox' || it.type === 'radio') { o.type = it.type; o.checked = !!it.checked }
+    if (it.shortcut) { o.accelerator = it.shortcut; o.registerAccelerator = false }
+    if (it.icon && it.icon.url) {
+      try {
+        const img = nativeImage.createEmpty()
+        img.addRepresentation({ scaleFactor: it.icon.scale || 1, dataURL: it.icon.url })
+        o.icon = img
+      } catch (err) {}
+    }
+    return o
+  }))
+  try {
+    const menu = build(items)
+    // a click arrives after the menu has closed
+    menu.popup({ window: win, x: Math.round(x), y: Math.round(y), callback: () => setTimeout(() => finish(null), 150) })
+    if (process.env.PAINT_TEST_MENU) {
+      const desc = m => m.items.map(i => i.type === 'separator' ? '-' : (i.label + (i.type === 'radio' || i.type === 'checkbox' ? (i.checked ? ' [x]' : ' [ ]') : '') +
+        (i.enabled ? '' : ' (off)') + (i.icon ? ' {' + i.icon.getSize().width + 'x' + i.icon.getSize().height + '}' : '') +
+        (i.accelerator ? ' <' + i.accelerator + '>' : '') + (i.submenu ? ' > [' + desc(i.submenu).join(' | ') + ']' : '')))
+      console.log('[menu]', desc(menu).join(' | '))
+      setTimeout(() => menu.closePopup(win), 600)
+    }
+  } catch (err) {
+    log('[main] menu failed', err.message)
+    finish(null)
+  }
+}))
+
+ipcMain.handle('dlg:message', async (e, o) => {
+  if (!win) return -1
+  const r = await dialog.showMessageBox(win, {
+    type: ['none', 'info', 'error', 'question', 'warning'].includes(o.type) ? o.type : 'none',
+    title: String(o.title || 'Paint'),
+    message: String(o.message || ''),
+    detail: o.detail ? String(o.detail) : undefined,
+    buttons: (o.buttons || ['OK']).map(String),
+    defaultId: o.defaultId || 0,
+    cancelId: o.cancelId != null ? o.cancelId : -1,
+    noLink: true
+  })
+  return r.response
+})
+
+ipcMain.handle('dlg:color', (e, rgb, custom) => win32.chooseColor(win, rgb, custom))
 
 ipcMain.on('win:title', (e, t) => { if (win) win.setTitle(String(t)) })
 ipcMain.on('app:lang', (e, l) => { uiLang = l === 'en' ? 'en' : 'ru' })
@@ -219,7 +320,8 @@ ipcMain.on('app:quit', () => { allowClose = true; if (win) win.close() })
 ipcMain.handle('app:args', () => startArgs)
 ipcMain.handle('app:version', () => app.getVersion())
 
-ipcMain.handle('steam:init', () => steam.init())
+// PAINT_NO_STEAM: test runs that must not touch the Steam account
+ipcMain.handle('steam:init', () => process.env.PAINT_NO_STEAM ? { ok: false, error: 'Steam отключён (PAINT_NO_STEAM)' } : steam.init())
 ipcMain.handle('steam:status', () => steam.status())
 ipcMain.handle('steam:createLobby', (e, type, max) => steam.createLobby(type, max))
 ipcMain.handle('steam:joinLobby', (e, id) => steam.joinLobby(id))
@@ -228,6 +330,8 @@ ipcMain.handle('steam:listLobbies', () => steam.listLobbies())
 ipcMain.handle('steam:lobbyState', () => steam.lobbyState())
 ipcMain.handle('steam:invite', () => steam.invite())
 ipcMain.handle('steam:friends', () => steam.openFriends())
+ipcMain.handle('steam:friendList', () => steam.friendList())
+ipcMain.handle('steam:inviteFriend', (e, id) => steam.inviteFriend(id))
 ipcMain.on('steam:send', (e, targets, text, reliable) => steam.send(targets, text, reliable))
 ipcMain.handle('steam:diagnostics', () => steam.diagnostics())
 ipcMain.on('log', (e, line) => log('[net]', String(line).slice(0, 2000)))

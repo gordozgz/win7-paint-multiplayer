@@ -12,10 +12,12 @@ with friends over Steam**.
 
 - **Windows 7 Paint design.** The look and feel of the classic Windows 7 Paint: the ribbon with
   the Home and View tabs, Color 1 / Color 2, the color palette, the Edit Colors dialog, Resize and
-  Skew, rulers, gridlines, the status bar, the File menu. All icons are drawn from scratch.
-- **Connecting through Steam.** Host a lobby and invite friends through the Steam overlay, let them
-  find it in the lobby browser, or share a lobby code. Players connect peer-to-peer through Steam's
-  relay network, so there is nothing to configure: no IP addresses, no port forwarding.
+  Skew, rulers, gridlines, the status bar, the File menu. All icons are drawn from scratch. Menus,
+  message boxes and the color picker are the standard Windows ones.
+- **Connecting through Steam.** Host a lobby and invite friends from the list of your Steam
+  friends, let them find it in the lobby browser, or share a lobby code. Players connect
+  peer-to-peer through Steam's relay network, so there is nothing to configure: no IP addresses,
+  no port forwarding.
 - Live presence: you see the other players' cursors with their Steam names and their strokes
   while they draw.
 - Russian and English interface (View → Language).
@@ -25,10 +27,14 @@ with friends over Steam**.
 Pencil, fill, text (font, size, bold/italic/underline/strikethrough, opaque or transparent
 background), eraser and color eraser (right button), color picker, magnifier; 9 brushes (brush,
 two calligraphy brushes, airbrush, oil, crayon, marker, natural pencil, watercolor); 23 shapes with
-outline and fill styles, editable after drawing; rectangular and free-form selection with move,
-Ctrl+drag copy, stretch, transparent selection, invert selection; crop, resize and skew, rotate and
-flip, invert colors; dragging the canvas edges; zoom 12.5–800 %, thumbnail, full screen; open and
-save PNG, JPEG and BMP; the Windows clipboard; recent pictures.
+outline and fill styles, editable after drawing, drawn pixel-sharp without anti-aliasing;
+rectangular and free-form selection with move, Ctrl+drag copy, Shift+drag trail of copies,
+stretch (Shift keeps the proportions), transparent selection, invert selection; resampling like in
+Photoshop: nearest neighbor (the default, hard pixels), bilinear or bicubic; crop, resize and skew,
+rotate and flip, invert colors; dragging the canvas edges; zoom 12.5–800 %, drag a frame with the
+magnifier to zoom into it, thumbnail, full screen; open and save PNG, JPEG and BMP; drag pictures
+in from Explorer or a browser; paste pictures, copied image files and image links from the
+clipboard; recent pictures.
 
 ## Download
 
@@ -40,7 +46,8 @@ Get `Paint-multiplayer-<version>-win64.zip` from [Releases](../../releases), unz
 1. The host opens the **Multiplayer** tab and clicks **Create lobby** (the arrow under the button
    chooses public / friends only / private).
 2. Each friend **starts Paint first**, then joins in one of these ways:
-   - accept the host's invitation (**Invite friends** opens the Steam overlay),
+   - accept the host's invitation in Steam chat (**Invite friends** lists the host's Steam
+     friends),
    - **Join by code** with the lobby code (the host copies it with **Copy code**),
    - **Find lobby** (public lobbies only).
 3. The host's picture is loaded on every guest, and from then on everyone draws on one canvas.
@@ -115,9 +122,10 @@ Corporation. No Microsoft code or artwork is used.
 - **Дизайн Paint из Windows 7.** Внешний вид и поведение классического Paint из Windows 7: лента
   с вкладками «Главная» и «Вид», Цвет 1 / Цвет 2, палитра, диалог «Изменение цветов», «Изменение
   размеров и наклона», линейки, сетка, строка состояния, меню «Файл». Все иконки нарисованы заново.
-- **Подключение через Steam.** Создай лобби и пригласи друзей через оверлей Steam, дай им найти
-  лобби в поиске или просто скинь код лобби. Игроки соединяются напрямую через ретрансляторы Steam,
-  настраивать ничего не нужно: ни IP-адресов, ни проброса портов.
+  Меню, окна сообщений и выбор цвета — стандартные, из Windows.
+- **Подключение через Steam.** Создай лобби и пригласи друзей прямо из списка друзей Steam, дай им
+  найти лобби в поиске или просто скинь код лобби. Игроки соединяются напрямую через ретрансляторы
+  Steam, настраивать ничего не нужно: ни IP-адресов, ни проброса портов.
 - Видно курсоры других игроков с их никами в Steam и их штрихи прямо во время рисования.
 - Интерфейс на русском и английском (Вид → Язык).
 
@@ -126,11 +134,15 @@ Corporation. No Microsoft code or artwork is used.
 Карандаш, заливка, текст (шрифт, размер, Ж/К/Ч/зачёркнутый, прозрачный и непрозрачный фон),
 ластик и ластик цвета (правой кнопкой), палитра, масштаб; 9 кистей (кисть, две каллиграфические,
 распылитель, масляная, пастель, маркер, обычный карандаш, акварель); 23 фигуры с контуром и
-заливкой, которые можно править после рисования; прямоугольное и произвольное выделение с
-переносом, копированием через Ctrl, растяжением, прозрачным выделением и обращением выделения;
-обрезка, изменение размера и наклон, повороты и отражения, обращение цветов; растягивание холста за
-края; масштаб 12,5–800 %, эскиз, полноэкранный режим; открытие и сохранение PNG, JPEG и BMP; буфер
-обмена Windows; последние изображения.
+заливкой, которые можно править после рисования, — чёткие, без сглаживания; прямоугольное и
+произвольное выделение с переносом, копированием через Ctrl, шлейфом копий через Shift,
+растяжением (Shift сохраняет пропорции), прозрачным выделением и обращением выделения;
+масштабирование как в Photoshop: по соседним пикселям (по умолчанию, чёткие пиксели), билинейное
+или бикубическое; обрезка, изменение размера и наклон, повороты и отражения, обращение цветов;
+растягивание холста за края; масштаб 12,5–800 %, увеличение области рамкой лупы, эскиз,
+полноэкранный режим; открытие и сохранение PNG, JPEG и BMP; перетаскивание картинок из Проводника
+и браузера; вставка из буфера обмена картинок, скопированных файлов и ссылок на изображения;
+последние изображения.
 
 ### Скачать
 
@@ -142,7 +154,8 @@ Corporation. No Microsoft code or artwork is used.
 1. Хост открывает вкладку **Мультиплеер** и жмёт **Создать лобби** (стрелка под кнопкой —
    публичное / только для друзей / приватное).
 2. Каждый друг **сначала запускает Paint**, потом подключается одним из способов:
-   - принимает приглашение хоста (**Пригласить друзей** открывает оверлей Steam),
+   - принимает приглашение хоста в чате Steam (**Пригласить друзей** показывает список друзей
+     Steam хоста),
    - **Войти по коду** — код лобби хост копирует кнопкой **Скопировать код**,
    - **Найти лобби** (только публичные лобби).
 3. У гостей загружается рисунок хоста, и дальше все рисуют на одном холсте.

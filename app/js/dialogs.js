@@ -75,14 +75,36 @@
     return { el: dlg, close }
   }
 
+  // Message boxes are standard Windows ones in Paint.exe.
+  // opts: title, icon (info|warn|error|question), main (instruction), text,
+  // buttons, default, cancel. Resolves with the button index (-1: closed).
+  const BOX_TYPE = { info: 'info', warn: 'warning', error: 'error', question: 'question' }
   Dl.message = function (opts) {
+    const labels = opts.buttons || ['ОК']
+    const def = opts.default || 0
+    const cancel = opts.cancel != null ? opts.cancel : labels.length - 1
+    const native = window.native
+    if (native && native.messageBox) {
+      openCount++
+      P.ui.closeMenus()
+      const main = opts.main ? P.T(opts.main) : P.T(opts.text || '')
+      return native.messageBox({
+        type: BOX_TYPE[opts.icon || 'info'] || 'none',
+        title: P.T(opts.title || 'Paint'),
+        message: main,
+        detail: opts.main && opts.text ? P.T(opts.text) : null,
+        buttons: labels.map(l => P.T(l)),
+        defaultId: def,
+        cancelId: cancel
+      }).catch(() => -1).finally(() => { openCount-- })
+    }
     return new Promise(resolve => {
-      const labels = opts.buttons || ['ОК']
-      const def = opts.default || 0
-      const cancel = opts.cancel != null ? opts.cancel : labels.length - 1
+      const text = h('div.msg-text')
+      if (opts.main) text.appendChild(h('h3', { text: opts.main }))
+      if (opts.text) text.appendChild(h('div', { text: opts.text }))
       Dl.open({
         title: opts.title || 'Paint',
-        body: h('div.msg-body', null, h('div.msg-ic', { html: P.icons[opts.icon || 'info'] }), h('div.msg-text', { html: opts.html || '', text: opts.html ? null : opts.text })),
+        body: h('div.msg-body', null, h('div.msg-ic', { html: P.icons[opts.icon || 'info'] }), text),
         buttons: labels.map((l, i) => ({ label: l, default: i === def, cancel: i === cancel, value: i })),
         onClose: v => resolve(v)
       })
@@ -109,11 +131,14 @@
   const num = (v, w) => h('input.inp', { value: String(v), style: { width: (w || 60) + 'px' } })
 
   // ---------------------------------------------------------- resize & skew
-  Dl.resize = function (baseW, baseH) {
+  Dl.resize = function (baseW, baseH, resample) {
     return new Promise(resolve => {
       let mode = 'pct'
       const ih = num(100); const iv = num(100); const sh = num(0); const sv = num(0)
       const keep = h('input', { type: 'checkbox', checked: true })
+      const rs = h('select.inp', { style: { width: '100%' } })
+      for (const m of P.raster.RESAMPLE) rs.appendChild(h('option', { value: m, text: P.raster.RESAMPLE_NAMES[m] }))
+      rs.value = resample || 'nearest'
       const rP = h('input', { type: 'radio', name: 'rsz', checked: true })
       const rX = h('input', { type: 'radio', name: 'rsz' })
       let lock = false
@@ -147,12 +172,13 @@
         h('fieldset', null, h('legend', { text: 'Изменить размер' }),
           h('div.form-row', null, h('label.l', { text: 'По:' }), h('label.radio', null, rP, 'процентам'), h('label.radio', null, rX, 'пикселям')),
           row(iconH, 'По горизонтали:', ih), row(iconV, 'По вертикали:', iv),
-          h('div.form-row', null, h('label.check', null, keep, 'Сохранить пропорции'))),
+          h('div.form-row', null, h('label.check', null, keep, 'Сохранить пропорции')),
+          h('div.form-row', null, h('label', { text: 'Интерполяция:', style: { whiteSpace: 'nowrap' } }), rs)),
         h('fieldset', null, h('legend', { text: 'Наклон (градусы)' }), row(iconSH, 'По горизонтали:', sh), row(iconSV, 'По вертикали:', sv)))
       let result = null
       Dl.open({
         title: 'Изменение размеров и наклона',
-        width: 300,
+        width: 320,
         body,
         buttons: [
           {
@@ -166,7 +192,7 @@
               if (mode === 'pct') { w = baseW * w / 100; hh = baseH * hh / 100 }
               w = Math.max(1, Math.round(w)); hh = Math.max(1, Math.round(hh))
               if (w > 20000 || hh > 20000) { Dl.alert('Слишком большой размер изображения.', 'error'); return false }
-              result = { w, h: hh, ax, ay }
+              result = { w, h: hh, ax, ay, rs: rs.value }
             }
           },
           { label: 'Отмена', cancel: true }
@@ -426,6 +452,79 @@
     })
   }
 
+  // ---------------------------------------------------------- invite friends
+  // Paint's own list of Steam friends (the Steam overlay often can't draw over
+  // the window). An invite arrives in the friend's Steam chat; their Paint
+  // must be running to accept it.
+  Dl.inviteFriends = function () {
+    const api = window.native && window.native.steam
+    if (!api || !api.friendList) return
+    const STATE = { 0: 'Не в сети', 1: 'В сети', 2: 'Не беспокоить', 3: 'Нет на месте', 4: 'Спит', 5: 'Хочет обменяться', 6: 'Хочет поиграть', 7: 'Невидимка' }
+    const list = h('div.friend-list')
+    const status = h('div.muted', { style: { minHeight: '15px' } })
+    const search = h('input.inp', { placeholder: P.T('Поиск друзей'), style: { flex: '1' } })
+    const showOff = h('input', { type: 'checkbox' })
+    const invited = new Set()
+    let friends = []
+    let timer = 0
+    const render = () => {
+      const q = search.value.trim().toLowerCase()
+      list.innerHTML = ''
+      const rank = f => f.member ? 3 : f.paint ? 0 : f.state > 0 ? 1 : 2
+      const shown = friends
+        .filter(f => (showOff.checked || f.state > 0 || f.member) && (!q || f.name.toLowerCase().includes(q)))
+        .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+      if (!shown.length) {
+        list.appendChild(h('div.lobby-empty', { text: friends.length ? 'Никого не найдено.' : 'Друзей в сети нет.' }))
+        return
+      }
+      for (const f of shown) {
+        const st = f.member ? 'Уже в лобби' : f.paint ? 'Запустил Paint / Spacewar' : f.game ? 'В игре' : STATE[f.state] || ''
+        const btn = h('button.btn', { text: invited.has(f.id) ? 'Приглашён' : 'Пригласить', disabled: f.member || invited.has(f.id) })
+        btn.addEventListener('click', async () => {
+          btn.disabled = true
+          const r = await api.inviteFriend(f.id)
+          if (r && r.ok) { invited.add(f.id); btn.textContent = P.T('Приглашён') } else {
+            btn.disabled = false
+            status.textContent = P.T('Ошибка: {e}', { e: P.T((r && r.error) || '?') })
+          }
+        })
+        list.appendChild(h('div.friend' + (f.state > 0 ? '' : '.off'), null,
+          h('span.pav', { style: f.avatar ? { backgroundImage: 'url("' + f.avatar + '")' } : null }),
+          h('span.fname', null, h('b', { text: f.name }), h('span', { text: st, class: f.paint ? 'fpaint' : null })),
+          btn))
+      }
+    }
+    const refresh = async () => {
+      const r = await api.friendList()
+      if (!r || !r.ok) { status.textContent = P.T('Ошибка: {e}', { e: P.T((r && r.error) || '?') }); friends = []; render(); return }
+      friends = r.friends
+      const online = friends.filter(f => f.state > 0).length
+      status.textContent = P.T('Друзей в сети: {n} из {m}', { n: online, m: friends.length })
+      render()
+    }
+    search.addEventListener('input', render)
+    search.addEventListener('keydown', e => e.stopPropagation())
+    showOff.addEventListener('change', render)
+    const body = h('div', { style: { width: '420px' } },
+      h('div', { style: { marginBottom: '6px', lineHeight: '17px' }, text: 'Приглашение придёт другу в чат Steam. У друга должен быть запущен этот Paint — тогда он подключится сам.' }),
+      h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' } }, search, h('label.check', null, showOff, 'Не в сети')),
+      list, status)
+    Dl.open({
+      title: 'Пригласить друзей',
+      body,
+      buttons: [
+        { label: 'Оверлей Steam', action: () => { P.net.invite(); return false } },
+        { label: 'Закрыть', default: true, cancel: true }
+      ],
+      onClose: () => clearInterval(timer)
+    })
+    render()
+    refresh()
+    // avatars and statuses arrive from Steam over time
+    timer = setInterval(refresh, 4000)
+  }
+
   Dl.lobbyCreated = function (id) {
     const code = h('div.code-box', { text: id })
     Dl.open({
@@ -441,7 +540,7 @@
         h('div', { text: '    либо друг жмёт «Войти по коду» и вводит код выше,' }),
         h('div', { text: '    либо «Найти лобби» (если лобби публичное).' })),
       buttons: [
-        { label: 'Пригласить друзей', action: () => { P.net.invite() } },
+        { label: 'Пригласить друзей', action: () => { setTimeout(() => P.app.inviteFriends(), 0) } },
         { label: 'ОК', default: true, cancel: true }
       ]
     })

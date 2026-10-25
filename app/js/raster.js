@@ -524,73 +524,120 @@
     return bboxPts(all, m, cv)
   }
 
-  function noise1 (v, seed) {
-    const i = Math.floor(v); const f = v - i
-    const a = U.hash3(i, 7, seed); const b = U.hash3(i + 1, 7, seed)
-    const s = f * f * (3 - 2 * f)
-    return a + (b - a) * s
+  // ---------- textures for shape outlines and fills ----------
+  // Built once at startup: 256×256 tiles of texture levels. A textured shape
+  // only looks its pixels up in a tile (shifted by the op's seed) and maps the
+  // level to a color through a 256-entry table, so a big "oil" shape costs
+  // about as much as a solid one.
+  const TEX = 256
+  const TEXM = TEX - 1
+  let tiles = null
+
+  // value noise with cx × cy cells per tile; wraps around at the tile edge
+  function tileNoise (x, y, cx, cy, seed) {
+    const fx = (x * cx) / TEX; const fy = (y * cy) / TEX
+    const ix = Math.floor(fx); const iy = Math.floor(fy)
+    const tx = fx - ix; const ty = fy - iy
+    const sx = tx * tx * (3 - 2 * tx); const sy = ty * ty * (3 - 2 * ty)
+    const x0 = ix % cx; const x1 = (ix + 1) % cx; const y0 = iy % cy; const y1 = (iy + 1) % cy
+    const a = U.hash3(x0, y0, seed); const b = U.hash3(x1, y0, seed)
+    const c = U.hash3(x0, y1, seed); const d = U.hash3(x1, y1, seed)
+    return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy
   }
 
-  function applyTexture (t, bb, style, seed) {
-    if (style === 'marker' || style === 'water') return
-    const img = t.getImageData(0, 0, bb.w, bb.h); const d = img.data
-    for (let y = 0; y < bb.h; y++) {
-      for (let x = 0; x < bb.w; x++) {
-        const k = (y * bb.w + x) * 4
-        const a = d[k + 3]
-        if (!a) continue
-        const gx = x + bb.x; const gy = y + bb.y
-        if (style === 'crayon') {
-          if (U.hash3(gx, gy, seed) >= 0.55) d[k + 3] = 0
-        } else if (style === 'npencil') {
-          if (U.hash3(gx, gy, seed) >= 0.45) d[k + 3] = 0
-          else d[k + 3] = Math.round(a * 0.6)
-        } else if (style === 'oil') {
-          const f = 0.72 + 0.56 * noise1((gx + gy * 0.35) * 0.3, seed)
-          d[k] = U.clamp(Math.round(d[k] * f + (f > 1 ? (f - 1) * 120 : 0)), 0, 255)
-          d[k + 1] = U.clamp(Math.round(d[k + 1] * f + (f > 1 ? (f - 1) * 120 : 0)), 0, 255)
-          d[k + 2] = U.clamp(Math.round(d[k + 2] * f + (f > 1 ? (f - 1) * 120 : 0)), 0, 255)
-        }
-      }
+  R.initTextures = function () {
+    if (tiles) return tiles
+    const make = fn => {
+      const t = new Uint8Array(TEX * TEX)
+      for (let y = 0; y < TEX; y++) for (let x = 0; x < TEX; x++) t[y * TEX + x] = fn(x, y)
+      return t
     }
-    t.putImageData(img, 0, 0)
+    tiles = {
+      // grain: 1 = paint, 0 = paper showing through
+      crayon: make((x, y) => U.hash3(x, y, 71) < 0.4 + 0.3 * tileNoise(x, y, 32, 32, 73) ? 1 : 0),
+      npencil: make((x, y) => U.hash3(x, y, 81) < 0.3 + 0.28 * tileNoise(x, y, 40, 40, 83) ? 1 : 0),
+      // 0..63: brightness of diagonal brush streaks
+      oil: make((x, y) => {
+        const u = (x + y) & TEXM; const v = (y - x) & TEXM
+        return Math.round((0.7 * tileNoise(u, v, 48, 6, 31) + 0.3 * tileNoise(x, y, 16, 16, 37)) * 63)
+      }),
+      // 0..63: paint density of soft blotches
+      water: make((x, y) => Math.round((0.6 * tileNoise(x, y, 6, 6, 51) + 0.4 * tileNoise(x, y, 20, 20, 53)) * 63))
+    }
+    return tiles
   }
 
+  const pack = (r, g, b, a) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0
+
+  // level -> RGBA for a style and color
+  function styleTable (style, c) {
+    const lut = new Uint32Array(256)
+    const [r, g, b] = c
+    if (style === 'crayon') lut[1] = pack(r, g, b, 255)
+    else if (style === 'npencil') lut[1] = pack(r, g, b, 153)
+    else if (style === 'marker') lut.fill(pack(r, g, b, 128))
+    else if (style === 'oil') {
+      for (let k = 0; k < 64; k++) {
+        const f = 0.72 + 0.56 * k / 63; const add = f > 1 ? (f - 1) * 120 : 0
+        const m = v => U.clamp(Math.round(v * f + add), 0, 255)
+        lut[k] = pack(m(r), m(g), m(b), 255)
+      }
+    } else if (style === 'water') {
+      for (let k = 0; k < 64; k++) lut[k] = pack(r, g, b, Math.round(255 * (0.26 + 0.26 * k / 63)))
+    } else lut.fill(pack(r, g, b, 255))
+    return lut
+  }
+
+  // Shapes are drawn without anti-aliasing, like in Paint: the geometry is
+  // rasterized as a coverage mask, cut at 50% (1px outlines are plain
+  // Bresenham lines), and the kept pixels get the color or texture.
   function paintPart (dst, op, paths, mode, style, color) {
     const sharp = SHARP.has(op.k)
     const isLine = op.k === 'line' || op.k === 'curve'
-    const setup = ctx => {
-      ctx.fillStyle = ctx.strokeStyle = U.css(color)
-      ctx.lineWidth = op.s
-      ctx.lineJoin = sharp ? 'miter' : 'round'
-      ctx.miterLimit = 10
-      ctx.lineCap = isLine ? (op.s >= 3 ? 'round' : 'square') : 'butt'
-    }
-    const trace = (ctx, ox, oy) => {
-      ctx.beginPath()
-      for (const sp of paths) {
-        const p = sp.pts
-        ctx.moveTo(p[0] + ox, p[1] + oy)
-        for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i] + ox, p[i + 1] + oy)
-        if (sp.closed) ctx.closePath()
-      }
-    }
-    if (style === 'solid') {
-      setup(dst); trace(dst, 0, 0)
-      if (mode === 'fill') dst.fill(); else dst.stroke()
-      return
-    }
-    const bb = geomBox(paths, (mode === 'stroke' ? op.s : 0) + 10, dst.canvas)
+    const bb = geomBox(paths, (mode === 'stroke' ? op.s : 0) + 2, dst.canvas)
     if (!bb) return
     const t = tmp('shape', bb.w, bb.h)
-    setup(t); trace(t, -bb.x, -bb.y)
-    if (mode === 'fill') t.fill(); else t.stroke()
-    applyTexture(t, bb, style, (op.seed || 1) ^ (mode === 'fill' ? 0x5bd1e995 : 0))
-    dst.save()
-    if (style === 'marker') dst.globalAlpha = 0.5
-    if (style === 'water') { dst.globalAlpha = 0.4; dst.filter = 'blur(1.5px)' }
+    t.fillStyle = t.strokeStyle = '#000'
+    if (mode === 'stroke' && op.s <= 1) {
+      for (const sp of paths) {
+        const p = sp.pts; const n = p.length >> 1
+        const X = i => Math.floor(p[2 * i]) - bb.x; const Y = i => Math.floor(p[2 * i + 1]) - bb.y
+        const px = (x, y) => t.fillRect(x, y, 1, 1)
+        if (n === 1) px(X(0), Y(0))
+        for (let i = 1; i < n; i++) line(X(i - 1), Y(i - 1), X(i), Y(i), px)
+        if (sp.closed && n > 2) line(X(n - 1), Y(n - 1), X(0), Y(0), px)
+      }
+    } else {
+      t.lineWidth = op.s
+      t.lineJoin = sharp ? 'miter' : 'round'
+      t.miterLimit = 10
+      t.lineCap = isLine ? (op.s >= 3 ? 'round' : 'square') : 'butt'
+      t.beginPath()
+      for (const sp of paths) {
+        const p = sp.pts
+        t.moveTo(p[0] - bb.x, p[1] - bb.y)
+        for (let i = 2; i < p.length; i += 2) t.lineTo(p[i] - bb.x, p[i + 1] - bb.y)
+        if (sp.closed) t.closePath()
+      }
+      if (mode === 'fill') t.fill(); else t.stroke()
+    }
+    const img = t.getImageData(0, 0, bb.w, bb.h)
+    const d = new Uint32Array(img.data.buffer)
+    const lut = styleTable(style, color)
+    const tile = R.initTextures()[style]
+    if (tile) {
+      const seed = ((op.seed || 1) ^ (mode === 'fill' ? 0x5bd1e995 : 0)) >>> 0
+      const ox = (bb.x + seed) & TEXM; const oy = (bb.y + (seed >>> 8)) & TEXM
+      for (let y = 0, i = 0; y < bb.h; y++) {
+        const row = ((y + oy) & TEXM) * TEX
+        for (let x = 0; x < bb.w; x++, i++) d[i] = d[i] >>> 24 >= 128 ? lut[tile[row + ((x + ox) & TEXM)]] : 0
+      }
+    } else {
+      const c = lut[0]
+      for (let i = 0; i < d.length; i++) d[i] = d[i] >>> 24 >= 128 ? c : 0
+    }
+    t.putImageData(img, 0, 0)
     dst.drawImage(t.canvas, 0, 0, bb.w, bb.h, bb.x, bb.y, bb.w, bb.h)
-    dst.restore()
   }
 
   R.drawShape = function (dst, op) {
@@ -719,16 +766,82 @@
     dst.putImageData(img, r.x, r.y)
   }
 
+  // ---------- resampling ----------
+  // Scaling modes, named as in Photoshop. Nearest neighbor keeps pixels hard;
+  // the other two are Skia's bilinear and bicubic filters.
+  R.RESAMPLE = ['nearest', 'bilinear', 'bicubic']
+  R.RESAMPLE_NAMES = {
+    nearest: 'По соседним пикселям (чёткие края)',
+    bilinear: 'Билинейная',
+    bicubic: 'Бикубическая (плавные градиенты)'
+  }
+  R.setResample = function (ctx, mode) {
+    const q = mode === 'bilinear' ? 'low' : mode === 'bicubic' ? 'high' : null
+    ctx.imageSmoothingEnabled = !!q
+    if (q) ctx.imageSmoothingQuality = q
+  }
+
+  function asCanvas (src) {
+    if (src.getContext) return src
+    const c = U.canvas(src.width, src.height)
+    c.getContext('2d', { willReadFrequently: true }).drawImage(src, 0, 0)
+    return c
+  }
+
+  // src scaled to w × h, then skewed by ax/ay degrees. Nearest neighbor maps
+  // every target pixel back to one source pixel, so even skewed edges stay
+  // hard (canvas transforms would anti-alias them).
+  R.skewCanvas = function (src, w, h, ax, ay, bg, mode) {
+    const tx = Math.tan(((ax || 0) * Math.PI) / 180); const ty = Math.tan(((ay || 0) * Math.PI) / 180)
+    const W2 = Math.max(1, Math.round(w + Math.abs(tx) * h)); const H2 = Math.max(1, Math.round(h + Math.abs(ty) * w))
+    const out = U.canvas(W2, H2)
+    const ctx = out.getContext('2d', { willReadFrequently: true })
+    const ox = tx < 0 ? -tx * h : 0; const oy = ty < 0 ? -ty * w : 0
+    if (mode === 'bilinear' || mode === 'bicubic') {
+      if (bg) { ctx.fillStyle = U.css(bg); ctx.fillRect(0, 0, W2, H2) }
+      ctx.setTransform(1, ty, tx, 1, ox, oy)
+      R.setResample(ctx, mode)
+      ctx.drawImage(src, 0, 0, w, h)
+      return out
+    }
+    const sc = asCanvas(src)
+    const sw = sc.width; const sh = sc.height
+    const s32 = new Uint32Array(sc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, sw, sh).data.buffer)
+    const img = ctx.createImageData(W2, H2); const d32 = new Uint32Array(img.data.buffer)
+    const fill = bg ? pack(bg[0], bg[1], bg[2], 255) : 0
+    const det = 1 - tx * ty; const kx = sw / w; const ky = sh / h
+    for (let Y = 0, i = 0; Y < H2; Y++) {
+      const cy = Y + 0.5 - oy
+      for (let X = 0; X < W2; X++, i++) {
+        const cx = X + 0.5 - ox
+        const x = (cx - tx * cy) / det; const y = (cy - ty * cx) / det
+        if (x >= 0 && x < w && y >= 0 && y < h) d32[i] = s32[Math.min(sh - 1, Math.floor(y * ky)) * sw + Math.min(sw - 1, Math.floor(x * kx))]
+        else d32[i] = fill
+      }
+    }
+    ctx.putImageData(img, 0, 0)
+    return out
+  }
+
+  // stamp = pasted / moved selection or text; a Shift-drag leaves a trail of
+  // copies (op.trail: x,y pairs)
   R.drawStamp = function (dst, op) {
     if (op.cut) R.fillRegion(dst, op.cut, op.cc)
-    if (op._img) {
-      const iw = op._img.width; const ih = op._img.height
-      dst.save()
-      dst.imageSmoothingEnabled = !(iw === op.w && ih === op.h)
-      dst.imageSmoothingQuality = 'high'
-      dst.drawImage(op._img, op.x, op.y, op.w, op.h)
-      dst.restore()
+    if (!op._img) return
+    let src = op._img
+    const same = src.width === op.w && src.height === op.h
+    const tr = op.trail
+    if (tr && !same && tr.length > 2) {
+      // scale once, then copy
+      const c = U.canvas(op.w, op.h); const cx = c.getContext('2d', { willReadFrequently: true })
+      R.setResample(cx, op.rs); cx.drawImage(src, 0, 0, op.w, op.h)
+      src = c
     }
+    dst.save()
+    R.setResample(dst, same || src !== op._img ? 'nearest' : op.rs)
+    if (tr) for (let i = 0; i < tr.length; i += 2) dst.drawImage(src, tr[i], tr[i + 1], op.w, op.h)
+    else dst.drawImage(src, op.x, op.y, op.w, op.h)
+    dst.restore()
   }
 
   // Render an op onto an overlay (preview / pending / remote layers)

@@ -99,6 +99,19 @@
     V.emit('zoomChanged')
   }
 
+  // zoom so that image rect r fills the visible area, centered
+  V.zoomToRect = function (r) {
+    const pad = 16
+    V.zoom = U.clamp(Math.min((V.ws.clientWidth - pad) / r.w, (V.ws.clientHeight - pad) / r.h), 0.125, 8)
+    V.applyZoom()
+    const c = V.imageToClient(r.x + r.w / 2, r.y + r.h / 2)
+    const w = V.ws.getBoundingClientRect()
+    V.ws.scrollLeft += c.x - (w.left + V.ws.clientWidth / 2)
+    V.ws.scrollTop += c.y - (w.top + V.ws.clientHeight / 2)
+    V.drawRulers()
+    V.emit('zoomChanged')
+  }
+
   V.zoomStep = function (dir, cx, cy) {
     const z = V.zoom
     let next

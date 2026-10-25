@@ -28,6 +28,7 @@
     fill: 'none',
     selMode: 'rect',
     transparentSel: false,
+    resample: 'nearest',
     text: { font: 'Calibri', size: 11, b: false, i: false, u: false, s: false, opaque: false },
     file: { name: null, path: null, size: null, saved: null },
     dirty: false,
@@ -78,6 +79,14 @@
     if (!k) return
     A.sizes[k] = U.clamp(A.sizes[k] + delta, 1, k === 'eraser' ? 100 : 50)
     T.refresh()
+  }
+
+  // how selections and the picture are scaled (remembered between runs)
+  A.setResample = function (mode) {
+    if (!R.RESAMPLE.includes(mode)) return
+    A.resample = mode
+    try { localStorage.setItem('mp-paint-resample', mode) } catch (e) {}
+    T.select.refresh()
   }
 
   A.toggleText = function (key) {
@@ -160,9 +169,9 @@
 
   // ------------------------------------------------------------ menus
   function styleIcon (style) {
-    if (style === 'none') return ''
+    if (style === 'none') return null
     const b = { solid: 'brush', crayon: 'crayon', marker: 'marker', oil: 'oil', npencil: 'npencil', water: 'water' }[style]
-    return '<img width="16" height="16" src="' + UI.brushSample(b, 16, 16) + '">'
+    return UI.brushSample(b, 16, 16)
   }
 
   A.menus = {
@@ -172,14 +181,19 @@
     ],
     select: () => [
       { head: 'Формы выделения' },
-      { label: 'Прямоугольная область', icon: 'selRect', checked: A.selMode === 'rect', action: () => { A.selMode = 'rect'; A.setTool('select') } },
-      { label: 'Произвольная область', icon: 'selFree', checked: A.selMode === 'free', action: () => { A.selMode = 'free'; A.setTool('select') } },
+      { label: 'Прямоугольная область', icon: 'selRect', radio: true, checked: A.selMode === 'rect', action: () => { A.selMode = 'rect'; A.setTool('select') } },
+      { label: 'Произвольная область', icon: 'selFree', radio: true, checked: A.selMode === 'free', action: () => { A.selMode = 'free'; A.setTool('select') } },
       { head: 'Параметры выделения' },
       { label: 'Выделить все', icon: 'selAll', shortcut: 'Ctrl+A', action: () => A.cmd('selectAll') },
       { label: 'Обратить выделение', icon: 'selInv', action: () => A.cmd('invertSel') },
       { label: 'Удалить', icon: 'selDel', shortcut: 'Delete', disabled: !T.select.active(), action: () => A.cmd('deleteSel') },
-      { label: 'Прозрачное выделение', icon: 'selTrans', checked: A.transparentSel, action: () => { A.transparentSel = !A.transparentSel; T.select.refresh() } }
+      { label: 'Прозрачное выделение', icon: 'selTrans', checked: A.transparentSel, action: () => { A.transparentSel = !A.transparentSel; T.select.refresh() } },
+      { head: 'Масштабирование' },
+      { label: 'Режим масштабирования', icon: 'resize', sub: A.menus.resample }
     ],
+    resample: () => R.RESAMPLE.map(m => ({
+      label: R.RESAMPLE_NAMES[m], radio: true, checked: A.resample === m, action: () => A.setResample(m)
+    })),
     rotate: () => [
       { label: 'Повернуть на 90° вправо', icon: 'rotR', action: () => A.rotate('r90') },
       { label: 'Повернуть на 90° влево', icon: 'rotL', action: () => A.rotate('l90') },
@@ -187,39 +201,41 @@
       { label: 'Отразить по вертикали', icon: 'flipV', action: () => A.rotate('fv') },
       { label: 'Отразить по горизонтали', icon: 'flipH', action: () => A.rotate('fh') }
     ],
-    brushes: () => {
-      const grid = h('div.tile-gallery', { style: { gridTemplateColumns: 'repeat(3, 50px)' } })
-      for (const b of R.BRUSHES) {
-        const t = h('div.tile' + (A.brush === b ? '.on' : ''), { title: R.BRUSH_NAMES[b], style: { width: '50px', height: '50px' } },
-          h('img', { src: UI.brushSample(b, 44, 44), width: 44, height: 44 }))
-        t.addEventListener('click', () => { UI.closeMenus(); A.brush = b; A.setTool('brush'); A.updateToolUI() })
-        grid.appendChild(t)
-      }
-      return [{ el: grid }]
-    },
+    brushes: () => R.BRUSHES.map(b => ({
+      label: R.BRUSH_NAMES[b],
+      iconURL: UI.brushSample(b, 16, 16),
+      radio: true,
+      checked: A.brush === b,
+      action: () => { A.brush = b; A.setTool('brush'); A.updateToolUI() }
+    })),
     outline: () => R.STYLES.map(s => ({
       label: s === 'none' ? 'Без контура' : R.STYLE_NAMES[s],
-      icon: styleIcon(s),
+      iconURL: styleIcon(s),
+      radio: true,
       checked: A.outline === s,
       action: () => { A.outline = s; T.shape.refresh() }
     })),
     fillstyle: () => R.STYLES.map(s => ({
       label: s === 'none' ? 'Без заливки' : R.STYLE_NAMES[s],
-      icon: styleIcon(s),
+      iconURL: styleIcon(s),
+      radio: true,
       checked: A.fill === s,
       action: () => { A.fill = s; T.shape.refresh() }
     })),
     size: () => {
       const k = A.sizeKey()
       if (!k) return null
-      const box = h('div', { style: { padding: '2px', width: '170px' } })
-      for (const s of R.SIZES[k]) {
-        const vis = k === 'brush' ? Math.min(14, R.brushWidth(A.brush, s)) : Math.min(14, s)
-        const it = h('div.size-item' + (A.sizes[k] === s ? '.on' : ''), null, h('span.lbl', { text: s + 'px' }), h('span.line', { style: { height: Math.max(1, vis) + 'px' } }))
-        it.addEventListener('click', () => { UI.closeMenus(); A.sizes[k] = s; T.refresh() })
-        box.appendChild(it)
-      }
-      return [{ el: box }]
+      return R.SIZES[k].map(s => {
+        const ic = UI.lineSample(k === 'brush' ? R.brushWidth(A.brush, s) : s)
+        return {
+          label: P.T('{n} пкс', { n: s }),
+          iconURL: ic.url,
+          iconScale: ic.scale,
+          radio: true,
+          checked: A.sizes[k] === s,
+          action: () => { A.sizes[k] = s; T.refresh() }
+        }
+      })
     },
     lobbyType: () => [
       { label: 'Публичное лобби', icon: 'mpBrowse32', big: true, desc: 'Видно всем в «Найти лобби»', action: () => A.createLobby(2) },
@@ -252,6 +268,7 @@
       { label: 'Обрезать', icon: 'crop', shortcut: 'Ctrl+Shift+X', disabled: !has, action: () => A.cmd('crop') },
       { label: 'Повернуть', icon: 'rotate', sub: A.menus.rotate() },
       { label: 'Изменить размер', icon: 'resize', shortcut: 'Ctrl+W', action: () => A.cmd('resize') },
+      { label: 'Режим масштабирования', sub: A.menus.resample() },
       { label: 'Обратить цвет', shortcut: 'Ctrl+Shift+I', action: () => A.cmd('invertColors') }
     ])
   }
@@ -286,7 +303,7 @@
       case 'thumbnail': return A.thumbnail(!A.thumbOn)
       case 'editColors': return A.editColors()
       case 'mpCreate': return A.createLobby(2)
-      case 'mpInvite': if (!S.invite()) Dl.alert('Не удалось открыть оверлей Steam. Проверьте, что оверлей Steam включён (Steam → Настройки → В игре).', 'warn'); return
+      case 'mpInvite': return A.inviteFriends()
       case 'mpBrowse': return A.browseLobbies()
       case 'mpJoinCode': return A.joinByCode()
       case 'mpCopyCode': if (S.lobby) { A.copyText(S.lobby.id) } return
@@ -344,10 +361,11 @@
   A.resize = async function () {
     const sz = T.select.active() ? T.select.size() : { w: D.width(), h: D.height() }
     if (!T.select.active()) T.commitAll()
-    const r = await Dl.resize(sz.w, sz.h)
+    const r = await Dl.resize(sz.w, sz.h, A.resample)
     if (!r) return
+    A.setResample(r.rs)
     if (T.select.active()) T.select.scale(r)
-    else S.submit({ t: 'scale', w: r.w, h: r.h, ax: r.ax, ay: r.ay, c: A.color2.slice() })
+    else S.submit({ t: 'scale', w: r.w, h: r.h, ax: r.ax, ay: r.ay, rs: r.rs, c: A.color2.slice() })
   }
 
   A.properties = async function () {
@@ -360,9 +378,17 @@
     if (r && (r.w !== D.width() || r.h !== D.height())) S.submit({ t: 'canvas', w: r.w, h: r.h, c: [255, 255, 255] })
   }
 
+  // the standard Windows color dialog in Paint.exe; ours in the browser build
   A.editColors = async function () {
     const cur = A.slot === 1 ? A.color1 : A.color2
-    const c = await Dl.editColors(cur, A.dlgCustom)
+    let c
+    const r = native && native.chooseColor ? await native.chooseColor(cur, A.dlgCustom) : { unavailable: true }
+    if (r.unavailable) c = await Dl.editColors(cur, A.dlgCustom)
+    else {
+      A.dlgCustom = r.custom.map(x => (x[0] === 255 && x[1] === 255 && x[2] === 255 ? null : x))
+      try { localStorage.setItem('mp-paint-custom', JSON.stringify(A.dlgCustom)) } catch (e) {}
+      c = r.color
+    }
     if (!c) return
     A.setColor(A.slot, c)
     if (!A.custom.some(x => x && U.eq(x, c))) {
@@ -416,16 +442,60 @@
     try { A.pasteImage(await U.loadImage(r.dataURL)) } catch (e) { Dl.alert('Paint не удается прочитать этот файл.\nЭто недопустимый точечный рисунок, или его формат не поддерживается.', 'error') }
   }
 
-  A.pasteImage = async function (img) {
+  // at: image point for the top-left corner (drag & drop), else the view's corner
+  A.pasteImage = async function (img, at) {
     T.commitAll()
     if (img.width > D.width() || img.height > D.height()) {
       const r = await Dl.message({ title: 'Paint', icon: 'question', text: 'Вставляемое изображение больше холста.\nУвеличить холст, чтобы изображение поместилось?', buttons: ['Да', 'Нет', 'Отмена'] })
       if (r === 2 || r === -1) return
-      if (r === 0) S.submit({ t: 'canvas', w: Math.max(img.width, D.width()), h: Math.max(img.height, D.height()), c: A.color2.slice() })
+      if (r === 0) {
+        S.submit({ t: 'canvas', w: Math.max(img.width, D.width()), h: Math.max(img.height, D.height()), c: A.color2.slice() })
+        at = null
+      }
+    }
+    if (at) {
+      at = { x: U.clamp(at.x, 0, Math.max(0, D.width() - img.width)), y: U.clamp(at.y, 0, Math.max(0, D.height() - img.height)) }
     }
     A.setTool('select')
-    T.select.paste(img)
+    T.select.paste(img, at)
     A.updateCommands()
+  }
+
+  const readAsDataURL = file => new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(fr.result)
+    fr.onerror = () => reject(fr.error)
+    fr.readAsDataURL(file)
+  })
+  const IMG_NAME = /\.(png|jpe?g|jpe|jfif|bmp|dib|gif|ico|webp|avif|svg)$/i
+
+  // Pictures dragged in from Explorer or a browser are pasted where they are
+  // dropped, as a selection (in a lobby, everyone sees them).
+  A.dropData = async function (dt, clientX, clientY) {
+    if (Dl.isOpen()) return
+    let url = null
+    const file = Array.from(dt.files || []).find(f => f.type.startsWith('image/') || IMG_NAME.test(f.name))
+    try {
+      if (file) url = await readAsDataURL(file)
+      else {
+        const html = dt.getData('text/html') || ''
+        const m = html.match(/<img[^>]+src\s*=\s*["']([^"']+)["']/i)
+        const link = (m && m[1].replace(/&amp;/g, '&')) || (dt.getData('text/uri-list') || '').split(/\r?\n/).find(l => l && l[0] !== '#') || ''
+        if (/^data:image\//i.test(link)) url = link
+        else if (/^https?:\/\//i.test(link) && native && native.fetchImage) url = await native.fetchImage(link)
+      }
+    } catch (e) { url = null }
+    if (!url) {
+      if (file || (dt.files && dt.files.length) || dt.types.includes('text/uri-list')) Dl.alert('Paint не удается прочитать этот файл.\nЭто недопустимый точечный рисунок, или его формат не поддерживается.', 'error')
+      return
+    }
+    let img
+    try { img = await U.loadImage(url) } catch (e) {
+      Dl.alert('Paint не удается прочитать этот файл.\nЭто недопустимый точечный рисунок, или его формат не поддерживается.', 'error')
+      return
+    }
+    const pt = V.clientToImage(clientX, clientY)
+    A.pasteImage(img, { x: pt.x, y: pt.y })
   }
 
   // ------------------------------------------------------------ files
@@ -453,7 +523,7 @@
     if (!A.dirty) return true
     const name = A.file.name || P.T('Безымянный')
     const r = await Dl.message({
-      title: 'Paint', icon: 'warn', html: '<h3>' + P.T('Сохранить изменения в «{name}»?', { name: name.replace(/</g, '&lt;') }) + '</h3>', buttons: ['Сохранить', 'Не сохранять', 'Отмена']
+      title: 'Paint', icon: 'warn', main: P.T('Сохранить изменения в «{name}»?', { name }), buttons: ['Сохранить', 'Не сохранять', 'Отмена']
     })
     if (r === 0) return await A.save()
     return r === 1
@@ -656,6 +726,11 @@
     UI.showTab('mp')
   }
 
+  A.inviteFriends = function () {
+    if (!S.isOnline()) return
+    if (S.transport && S.transport.kind === 'steam') Dl.inviteFriends()
+  }
+
   A.browseLobbies = async function () {
     const id = await Dl.lobbyBrowser()
     if (id) A.joinLobby(id)
@@ -733,6 +808,11 @@
     fs.addEventListener('change', applySize)
     fs.addEventListener('keydown', e => { if (e.key === 'Enter') { applySize(); T.text.focus() } e.stopPropagation() })
     $('#fontCombo .combo-btn').addEventListener('click', e => {
+      e.stopPropagation()
+      if (UI.nativeMenus) {
+        UI.dropdown($('#fontCombo'), fonts.map(f => ({ label: f, radio: true, checked: f === A.text.font, action: () => { A.text.font = f; A.updateTextUI(); T.text.refresh(); T.text.focus() } })))
+        return
+      }
       const box = h('div', { style: { maxHeight: '360px', overflowY: 'auto', width: '230px' } })
       for (const f of fonts) {
         const it = h('div.mi' + (f === A.text.font ? '.checked' : ''), null, h('span.mic'), h('span', { text: f, style: { fontFamily: '"' + f + '"', fontSize: '14px' } }))
@@ -741,10 +821,9 @@
       }
       UI.dropdown($('#fontCombo'), [{ el: box }])
       const cur = box.querySelector('.checked'); if (cur) cur.scrollIntoView({ block: 'center' })
-      e.stopPropagation()
     })
     $('#sizeCombo .combo-btn').addEventListener('click', e => {
-      UI.dropdown($('#sizeCombo'), FONT_SIZES.map(s => ({ label: String(s), checked: s === A.text.size, action: () => { A.text.size = s; A.updateTextUI(); T.text.refresh(); T.text.focus() } })))
+      UI.dropdown($('#sizeCombo'), FONT_SIZES.map(s => ({ label: String(s), radio: true, checked: s === A.text.size, action: () => { A.text.size = s; A.updateTextUI(); T.text.refresh(); T.text.focus() } })))
       e.stopPropagation()
     })
     $('#btnBold').addEventListener('click', () => A.toggleText('b'))
@@ -805,6 +884,13 @@
 
   // ------------------------------------------------------------ boot
   A.init = async function () {
+    R.initTextures()
+    try {
+      const rs = localStorage.getItem('mp-paint-resample')
+      if (R.RESAMPLE.includes(rs)) A.resample = rs
+      const cc = JSON.parse(localStorage.getItem('mp-paint-custom') || 'null')
+      if (Array.isArray(cc) && cc.length === 16) A.dlgCustom = cc
+    } catch (e) {}
     D.init($('#cvMain'))
     V.init()
     UI.injectIcons(document)
@@ -849,6 +935,16 @@
     $('#connectCancel').addEventListener('click', () => { S.leave(); hideConnect() })
     document.addEventListener('keydown', onKey)
     document.addEventListener('contextmenu', e => { if (!e.target.closest('textarea, input')) e.preventDefault() })
+    // drag & drop of pictures; our own images must not be dragged around
+    document.addEventListener('dragstart', e => { if (e.target.tagName === 'IMG') e.preventDefault() })
+    window.addEventListener('dragover', e => {
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = Dl.isOpen() ? 'none' : 'copy'
+    })
+    window.addEventListener('drop', e => {
+      e.preventDefault()
+      if (e.dataTransfer) A.dropData(e.dataTransfer, e.clientX, e.clientY)
+    })
     window.addEventListener('paste', e => {
       if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || native) return
       const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith('image/'))

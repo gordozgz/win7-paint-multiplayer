@@ -26,7 +26,7 @@ async function main () {
 
   const appDir = path.join(out, 'resources', 'app')
   fs.mkdirSync(appDir, { recursive: true })
-  for (const f of ['main.js', 'preload.js', 'steam.js']) fs.copyFileSync(path.join(root, f), path.join(appDir, f))
+  for (const f of ['main.js', 'preload.js', 'steam.js', 'win32.js']) fs.copyFileSync(path.join(root, f), path.join(appDir, f))
   const pkg = require(path.join(root, 'package.json'))
   fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({
     name: pkg.name, productName: pkg.productName, version: pkg.version, description: pkg.description, main: pkg.main, dependencies: pkg.dependencies

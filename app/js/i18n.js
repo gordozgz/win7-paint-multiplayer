@@ -100,7 +100,7 @@ window.P = window.P || {};
     'Пригласить': 'Invite',
     'друзей': 'friends',
     'Пригласить друзей': 'Invite friends',
-    'Пригласить друзей через оверлей Steam': 'Invite friends through the Steam overlay',
+    'Пригласить друзей из списка друзей Steam': 'Invite friends from your Steam friend list',
     'Найти': 'Find',
     'Найти открытые лобби': 'Find open lobbies',
     'Войти по коду': 'Join by code',
@@ -361,7 +361,40 @@ window.P = window.P || {};
     'Неверный код лобби': 'Invalid lobby code',
     'Не удалось войти в лобби: ': 'Could not join the lobby: ',
     'Это лобби не от Paint (обычное лобби Spacewar).': 'This is not a Paint lobby (it is a regular Spacewar lobby).',
-    'У хоста другая версия Paint. Обновитесь оба до одной версии.': 'The host has a different version of Paint. Both of you need the same version.'
+    'У хоста другая версия Paint. Обновитесь оба до одной версии.': 'The host has a different version of Paint. Both of you need the same version.',
+    'Сначала создайте лобби': 'Create a lobby first',
+    'Список друзей Steam недоступен': 'The Steam friend list is unavailable',
+    'Steam не отправил приглашение': 'Steam did not send the invite',
+    'Steam отключён (PAINT_NO_STEAM)': 'Steam is turned off (PAINT_NO_STEAM)',
+
+    // ---- scaling (resampling)
+    'Масштабирование': 'Scaling',
+    'Режим масштабирования': 'Resampling',
+    'Интерполяция:': 'Resample:',
+    'По соседним пикселям (чёткие края)': 'Nearest Neighbor (hard edges)',
+    'Билинейная': 'Bilinear',
+    'Бикубическая (плавные градиенты)': 'Bicubic (smooth gradients)',
+    '{n} пкс': '{n} px',
+
+    // ---- invite friends
+    'Оверлей Steam': 'Steam overlay',
+    'Поиск друзей': 'Search friends',
+    'Приглашение придёт другу в чат Steam. У друга должен быть запущен этот Paint — тогда он подключится сам.':
+      'The invite arrives in your friend\'s Steam chat. If your friend has this Paint running, it joins by itself.',
+    'В сети': 'Online',
+    'Не беспокоить': 'Busy',
+    'Нет на месте': 'Away',
+    'Спит': 'Snooze',
+    'Хочет обменяться': 'Looking to trade',
+    'Хочет поиграть': 'Looking to play',
+    'Невидимка': 'Invisible',
+    'Уже в лобби': 'Already in the lobby',
+    'Запустил Paint / Spacewar': 'Running Paint / Spacewar',
+    'В игре': 'In a game',
+    'Приглашён': 'Invited',
+    'Никого не найдено.': 'Nobody found.',
+    'Друзей в сети нет.': 'No friends online.',
+    'Друзей в сети: {n} из {m}': 'Friends online: {n} of {m}'
   }
 
   // keys that may be followed by details (error text, a path …)

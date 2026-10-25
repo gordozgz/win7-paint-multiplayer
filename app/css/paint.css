@@ -368,3 +368,17 @@ legend { padding: 0 3px; color: #0b3d91; }
 ::-webkit-scrollbar-thumb:hover { background: #a6a6a6; }
 ::-webkit-scrollbar-corner { background: #f0f0f0; }
 #workspace::-webkit-scrollbar, #workspace::-webkit-scrollbar-corner { background: #f0f0f0; }
+/* invite friends */
+.friend-list { height: 260px; overflow-y: auto; background: #fff; border: 1px solid #828790; margin-bottom: 6px; }
+.friend { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-bottom: 1px solid #f0f0f0; }
+.friend:hover { background: #e5f3ff; }
+.friend .pav { width: 32px; height: 32px; flex: 0 0 32px; background: #dfe6ee center/cover no-repeat; border: 1px solid #c5c5c5; }
+.friend.off .pav { opacity: .45; }
+.friend .fname { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 16px; }
+.friend .fname b, .friend .fname span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend .fname b { font-weight: 600; }
+.friend.off .fname { color: #888; }
+.friend .fname span { color: #666; }
+.friend .fname span.fpaint { color: #107c10; }
+.friend .btn { min-width: 86px; }
+select.inp { padding: 0 2px; }

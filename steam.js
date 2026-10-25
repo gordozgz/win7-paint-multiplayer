@@ -14,7 +14,7 @@ const deflateRaw = promisify(zlib.deflateRaw)
 const inflateRaw = promisify(zlib.inflateRaw)
 
 const APP_ID = 480
-const PROTO = '3'
+const PROTO = '4'
 const LOBBY_KEY = 'mp_paint'
 
 const KIND_DEFLATE = 1
@@ -79,6 +79,13 @@ function loadFFI () {
     nRemoteIP: 'uint32',
     nRemotePort: 'uint16'
   })
+  const FriendGameInfo = koffi.struct('FriendGameInfo_t', {
+    m_gameID: 'uint64',
+    m_unGameIP: 'uint32',
+    m_usGamePort: 'uint16',
+    m_usQueryPort: 'uint16',
+    m_steamIDLobby: 'uint64'
+  })
   return {
     mm: lib.func('void* SteamAPI_SteamMatchmaking_v009()')(),
     friends: lib.func('void* SteamAPI_SteamFriends_v017()')(),
@@ -91,6 +98,11 @@ function loadFFI () {
     persona: lib.func('const char* SteamAPI_ISteamFriends_GetFriendPersonaName(void* self, uint64_t id)'),
     reqInfo: lib.func('bool SteamAPI_ISteamFriends_RequestUserInformation(void* self, uint64_t id, bool nameOnly)'),
     avatar: lib.func('int SteamAPI_ISteamFriends_GetMediumFriendAvatar(void* self, uint64_t id)'),
+    friendCount: lib.func('int SteamAPI_ISteamFriends_GetFriendCount(void* self, int flags)'),
+    friendAt: lib.func('uint64_t SteamAPI_ISteamFriends_GetFriendByIndex(void* self, int i, int flags)'),
+    personaState: lib.func('int SteamAPI_ISteamFriends_GetFriendPersonaState(void* self, uint64_t id)'),
+    gamePlayed: lib.func('bool SteamAPI_ISteamFriends_GetFriendGamePlayed(void* self, uint64_t id, _Out_ FriendGameInfo_t* info)'),
+    inviteToLobby: lib.func('bool SteamAPI_ISteamMatchmaking_InviteUserToLobby(void* self, uint64_t lobby, uint64_t invitee)'),
     imgSize: lib.func('bool SteamAPI_ISteamUtils_GetImageSize(void* self, int img, _Out_ uint32_t* w, _Out_ uint32_t* h)'),
     imgRGBA: lib.func('bool SteamAPI_ISteamUtils_GetImageRGBA(void* self, int img, void* dest, int size)'),
     sessionState: lib.func('bool SteamAPI_ISteamNetworking_GetP2PSessionState(void* self, uint64_t id, _Out_ P2PSessionState_t* st)'),
@@ -367,6 +379,57 @@ function openFriends () {
   try { client.overlay.activateDialog(0); return true } catch (e) { return false }
 }
 
+// Steam friends for Paint's own invite window (the overlay often can't draw
+// over an Electron window). state: 0 offline, 1 online, 2 busy, 3 away,
+// 4 snooze, 5/6 looking to trade/play.
+const FRIEND_IMMEDIATE = 4
+function friendList () {
+  if (!client) return { ok: false, error: 'Steam не подключен' }
+  if (!ffi) return { ok: false, error: 'Список друзей Steam недоступен' }
+  try {
+    const n = ffi.friendCount(ffi.friends, FRIEND_IMMEDIATE)
+    const ourLobby = lobby ? lobby.id.toString() : null
+    const out = []
+    for (let i = 0; i < n; i++) {
+      const id = BigInt(ffi.friendAt(ffi.friends, i, FRIEND_IMMEDIATE))
+      const key = id.toString()
+      const state = ffi.personaState(ffi.friends, id)
+      const info = {}
+      let game = 0
+      let inLobby = false
+      if (ffi.gamePlayed(ffi.friends, id, info)) {
+        game = Number(BigInt(info.m_gameID) & 0xFFFFFFn)
+        inLobby = !!ourLobby && BigInt(info.m_steamIDLobby).toString() === ourLobby
+      }
+      out.push({
+        id: key,
+        name: personaOf(id) || key,
+        state,
+        game,
+        paint: game === APP_ID,
+        member: memberCache.has(key) || inLobby,
+        avatar: state > 0 ? avatarOf(id) : null
+      })
+    }
+    return { ok: true, friends: out, inLobby: !!lobby }
+  } catch (e) {
+    log('friend list failed', e.message)
+    return { ok: false, error: String((e && e.message) || e) }
+  }
+}
+
+function inviteFriend (id) {
+  if (!client || !lobby) return { ok: false, error: 'Сначала создайте лобби' }
+  if (!ffi) return { ok: false, error: 'Список друзей Steam недоступен' }
+  try {
+    const ok = ffi.inviteToLobby(ffi.mm, BigInt(lobby.id), BigInt(id))
+    log('invite', id, ok)
+    return ok ? { ok: true } : { ok: false, error: 'Steam не отправил приглашение' }
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) }
+  }
+}
+
 // ---- framing: [kind][payload]; big reliable messages are deflated and cut into chunks
 function buildPackets (body, kind, msgId) {
   if (body.length + 1 <= CHUNK_SIZE) return [Buffer.concat([Buffer.from([kind]), body])]
@@ -532,6 +595,6 @@ function shutdown () {
 
 module.exports = {
   enableOverlay, setWindow, setLogger, init, status, createLobby, joinLobby, leaveLobby,
-  listLobbies, invite, openFriends, send, shutdown, lobbyState, diagnostics,
+  listLobbies, invite, openFriends, friendList, inviteFriend, send, shutdown, lobbyState, diagnostics,
   _test: { encodeFrames, decodeFrame }
 }
